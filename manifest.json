@@ -1,8 +1,8 @@
 {
   "name": "Flight Checklist",
   "short_name": "Checklist",
-  "description": "Aviation checklist app — bilingual EN/ES for C152, PA-28 and C172.",
-  "start_url": "https://4uk0.github.io/AvChecklist/",
+  "description": "Aviation checklist app — bilingual EN/ES for C152, PA-28 and C172 CAPE Aircraft.",
+  "start_url": "https://felipeloyolamejias-maker.github.io/CheckList/",
   "display": "standalone",
   "background_color": "#0a0e14",
   "theme_color": "#0a0e14",
