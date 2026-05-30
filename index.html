@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <title>Flight Checklist</title>
   <meta name="description" content="Aviation checklist app — bilingual EN/ES checklists for C152, PA-28 and C172 aircraft types."/>
   <meta name="theme-color" content="#0a0e14"/>
@@ -75,7 +75,7 @@ const T = {
     addPhase:"+ Add Phase",addItem:"+ Add Item",save:"SAVE",cancel:"CANCEL",
     phaseName:"Phase name...",itemText:"Item text...",noChecklists:"No custom checklists yet.",
     createFirst:"Create your first checklist above.",confirmDelete:"Delete this checklist?",
-    customClubName:"My Checklists",
+    customClubName:"My Checklists", confirmReset:"Reset the current phase?", yesReset:"YES, RESET"
   },
   es:{
     selectAircraftType:"TIPO DE AERONAVE",custom:"MIS LISTAS",back:"‹ ATRÁS",reset:"↺ REINICIAR",
@@ -88,7 +88,7 @@ const T = {
     addPhase:"+ Añadir fase",addItem:"+ Añadir elemento",save:"GUARDAR",cancel:"CANCELAR",
     phaseName:"Nombre de la fase...",itemText:"Texto del elemento...",noChecklists:"Aún no hay listas personalizadas.",
     createFirst:"Crea tu primera lista arriba.",confirmDelete:"¿Eliminar esta lista?",
-    customClubName:"Mis listas",
+    customClubName:"Mis listas", confirmReset:"¿Reiniciar la fase actual?", yesReset:"SÍ, REINICIAR"
   }
 };
 
@@ -858,6 +858,7 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
   const [completing,setCompleting] = useState({});
   const [showSpeeds,setShowSpeeds] = useState(false);
   const [showEmergencies, setShowEmergencies] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const tabsRef = useRef(null);
 
   const color = isCustom ? "#4FC3F7" : ac.color;
@@ -866,6 +867,7 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
   const emList = ac?.emergencies ? (ac.emergencies[uiLang(settings)] || ac.emergencies.en) : null;
 
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
+  const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
   const border = settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
   const text = settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
   const textDim = settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
@@ -925,6 +927,9 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
 
   const hasReset = doneCount>0 && activePhase!=="EMERGENCIES" && activePhase!=="URGENCES";
 
+  // Transparencia para la barra inferior (efecto blur nativo)
+  const navBarBg = settings.whiteMode ? "rgba(240, 244, 248, 0.95)" : settings.milGreen ? "rgba(13, 18, 8, 0.95)" : "rgba(10, 14, 20, 0.95)";
+
   return (
     <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column"}}>
       {showSpeeds&&!isCustom&&ac.speedTable&&(
@@ -936,53 +941,44 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
                         onClose={()=>setShowEmergencies(false)} settings={settings}/>
       )}
 
-      {/* Header superior estructurado en Fila */}
+      {/* Menú de confirmación de Reset */}
+      {showResetConfirm && (
+        <div style={{position:"fixed",inset:0,zIndex:600,background:"#0009",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:cardBg,border:`1px solid ${border}`,borderRadius:10,padding:24,maxWidth:300,width:"100%",textAlign:"center"}}>
+            <div style={{fontSize:14,fontWeight:"bold",color:text,marginBottom:20,letterSpacing:0.5}}>{t.confirmReset}</div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setShowResetConfirm(false)} style={{flex:1,padding:"12px 0",background:"transparent",border:`1px solid ${border}`,color:textDim,cursor:"pointer",borderRadius:6,fontSize:12,fontWeight:"bold",letterSpacing:1}}>{t.cancel}</button>
+              <button onClick={()=>{
+                resetPhase();
+                setShowResetConfirm(false);
+              }} style={{flex:1,padding:"12px 0",background:"#FF525214",border:"1px solid #FF5252",color:"#FF5252",cursor:"pointer",borderRadius:6,fontSize:12,fontWeight:"bold",letterSpacing:1}}>{t.yesReset}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header superior limpio */}
       <div style={{padding:"16px 16px 10px",borderBottom:`1px solid ${border}`,flexShrink:0}}>
         
-        {/* Fila Título y Back */}
-        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:16}}>
-          <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,
-                                            padding:"8px 14px",borderRadius:5,cursor:"pointer",fontSize:13,fontWeight:"bold",letterSpacing:1}}>
-            {t.back}
-          </button>
+        {/* Fila Título e Info */}
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+          <div style={{width:42,height:42,background:`${color}18`,border:`1px solid ${color}44`,
+                       borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:24}}>
+            {isCustom?<UserLogo size={32} color={color}/>:(ac.icon||"✈")}
+          </div>
           
-          <div style={{flex:1, textAlign:"center"}}>
-            <div style={{fontSize:10,letterSpacing:3,color,marginBottom:4}}>{isCustom?"CUSTOM":(ac.type.toUpperCase())}</div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
-              <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:text}}>{name}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,letterSpacing:3,color,marginBottom:2}}>{isCustom?"CUSTOM":(ac.type.toUpperCase())}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{fontSize:18,fontWeight:"bold",letterSpacing:1,color:text}}>{name}</div>
               {reg&&<div style={{fontSize:11,padding:"3px 8px",background:`${color}22`,border:`1px solid ${color}44`,borderRadius:4,color,fontWeight:"bold",letterSpacing:1}}>{reg}</div>}
             </div>
           </div>
           
           <div style={{textAlign:"right",minWidth:50}}>
             <div style={{fontSize:10,color:textDim,letterSpacing:2,marginBottom:4}}>{t.phase}</div>
-            <div style={{fontSize:14,fontWeight:"bold",color:allDone?"#4CAF50":accent}}>{allDone?t.done:`${doneCount}/${checkableCount}`}</div>
+            <div style={{fontSize:16,fontWeight:"bold",color:allDone?"#4CAF50":accent}}>{allDone?t.done:`${doneCount}/${checkableCount}`}</div>
           </div>
-        </div>
-
-        {/* Fila de Botones (Speeds, Emergencies, Reset) distribuidos horizontalmente */}
-        <div style={{display:"flex", gap:8, marginBottom:16}}>
-          {!isCustom&&ac.speedTable&&(
-            <button onClick={()=>setShowSpeeds(true)}
-              style={{flex:1, background:`${color}18`,border:`1px solid ${color}66`,color:color,
-                      fontSize:12,fontWeight:"bold",padding:"10px 0",borderRadius:6,cursor:"pointer",letterSpacing:1}}>
-              ✈ SPEEDS
-            </button>
-          )}
-          {!isCustom&&emList&&(
-            <button onClick={()=>setShowEmergencies(true)}
-              style={{flex:1, background:`#FF525218`,border:`1px solid #FF525266`,color:"#FF5252",
-                      fontSize:12,fontWeight:"bold",padding:"10px 0",borderRadius:6,cursor:"pointer",letterSpacing:1}}>
-              ⚠ EMERGENCIES
-            </button>
-          )}
-          {hasReset&&(
-            <button onClick={resetPhase}
-              style={{flex:(!isCustom&&ac.speedTable)? 0.6 : 1, background:`${border}44`,border:`1px solid ${border}`,color:text,
-                      fontSize:12,fontWeight:"bold",padding:"10px 0",borderRadius:6,cursor:"pointer",letterSpacing:1}}>
-              ↺ RESET
-            </button>
-          )}
         </div>
 
         {/* Progress Bar */}
@@ -1014,8 +1010,8 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
         </div>
       </div>
 
-      {/* Items */}
-      <div style={{flex:1,overflowY:"auto",padding:"16px 16px 24px"}}>
+      {/* Items List (Con padding inferior amplio para que no tape la barra de navegación) */}
+      <div style={{flex:1,overflowY:"auto",padding:"16px 16px 100px"}}>
         <div style={{fontSize:14,fontWeight:"bold",letterSpacing:2,color:accent,marginBottom:16}}>{activePhase}</div>
         
         {displayItems.map(({it,i})=>{
@@ -1055,6 +1051,40 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
           </div>
         )}
       </div>
+
+      {/* Barra de Navegación Inferior Estilo Nativo */}
+      <div style={{
+        position:"fixed", bottom:0, left:0, right:0,
+        background: navBarBg, borderTop:`1px solid ${border}`,
+        display:"flex", alignItems:"center", justifyContent:"space-around",
+        padding:"10px 10px", paddingBottom:"calc(10px + env(safe-area-inset-bottom, 0px))",
+        zIndex:100, backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)"
+      }}>
+        <button onClick={onBack} style={{flex:1, background:"transparent", border:"none", color:textDim, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer"}}>
+          <span style={{fontSize:22, lineHeight:1}}>‹</span>
+          <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>{t.back.replace('‹ ','').toUpperCase()}</span>
+        </button>
+
+        {!isCustom && ac.speedTable && (
+          <button onClick={()=>setShowSpeeds(true)} style={{flex:1, background:"transparent", border:"none", color:color, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer"}}>
+            <span style={{fontSize:18, lineHeight:1, marginTop:2}}>✈</span>
+            <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>SPEEDS</span>
+          </button>
+        )}
+
+        {!isCustom && emList && (
+          <button onClick={()=>setShowEmergencies(true)} style={{flex:1, background:"transparent", border:"none", color:"#FF5252", display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer"}}>
+            <span style={{fontSize:18, lineHeight:1, marginTop:2}}>⚠</span>
+            <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>EMERG.</span>
+          </button>
+        )}
+
+        <button onClick={()=>setShowResetConfirm(true)} style={{flex:1, background:"transparent", border:"none", color:hasReset ? text : textDim, opacity: hasReset ? 1 : 0.5, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:hasReset?"pointer":"default"}} disabled={!hasReset}>
+          <span style={{fontSize:18, lineHeight:1, marginTop:2}}>↺</span>
+          <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>RESET</span>
+        </button>
+      </div>
+
     </div>
   );
 }
