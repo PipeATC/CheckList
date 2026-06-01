@@ -65,6 +65,7 @@ const T = {
     settingsTitle:"SETTINGS",settingsDesc:"App preferences and language",
     whiteMode:"White Mode",milGreen:"Military Green",
     autoAdvance:"Auto-advance Phase",floatDone:"Float Completed Items",
+    centerText:"Centered Text",
     lang:"Language",newChecklist:"+ NEW CHECKLIST",editChecklist:"EDIT",
     deleteChecklist:"DELETE",checklistName:"Checklist Name",
     addPhase:"+ Add Phase",addItem:"+ Add Item",save:"SAVE",cancel:"CANCEL",
@@ -78,6 +79,7 @@ const T = {
     settingsTitle:"AJUSTES",settingsDesc:"Preferencias de la app e idioma",
     whiteMode:"Modo Blanco",milGreen:"Verde Militar",
     autoAdvance:"Avance automática de fase",floatDone:"Flotar elementos completados",
+    centerText:"Texto Centrado",
     lang:"Idioma",newChecklist:"+ NUEVA LISTA",editChecklist:"EDITAR",
     deleteChecklist:"ELIMINAR",checklistName:"Nombre de la lista",
     addPhase:"+ Añadir fase",addItem:"+ Añadir elemento",save:"GUARDAR",cancel:"CANCELAR",
@@ -88,7 +90,7 @@ const T = {
 };
 
 const SETTINGS_KEY = "flightChecklistSettings";
-const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,lang:"es"};
+const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,centerText:false,lang:"es"};
 
 function normalizeLang(lang){
   if(lang==="fr") return "es";
@@ -1131,13 +1133,13 @@ const PA28_ES = {
     "Comandos – despegar a la menor velocidad posible",
     "A ras de suelo, acelerar a mejor ángulo 73 KIAS y franquear obstáculo",
     "Continuar ascenso acelerando a mejor régimen 85 KIAS",
-    "Flaps – RETRAER LENTAMENTE",
+    "Flaps – RETRACT LENTAMENTE",
     "CAMPO BLANDO, SIN OBSTÁCULO:",
     "Flaps – 25° (2da posición)",
     "Acelerar – levantar la rueda de morro lo antes posible",
     "Comandos – despegar a la menor velocidad posible",
     "A ras de suelo, acelerar a mejor régimen 85 KIAS y ascender",
-    "Flaps – RETRAER LENTAMENTE"
+    "Flaps – RETRACT LENTAMENTE"
   ],
   "ASCENSO / EN VUELO": [
     "Mejor régimen (3000 lb) (flaps arriba) – 85 KIAS",
@@ -1305,6 +1307,7 @@ function SettingsPanel({onClose,settings,setSettings}){
           {k:"milGreen",label:t.milGreen},
           {k:"autoAdvance",label:t.autoAdvance},
           {k:"floatDone",label:t.floatDone},
+          {k:"centerText",label:t.centerText},
         ].map(({k,label})=>(
           <div key={k} onClick={()=>toggle(k)}
                style={{display:"flex",justifyContent:"space-between",alignItems:"center",
@@ -1842,7 +1845,9 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
           const isConfirmed = !!confirmed[key];
           return (
             <div key={i} onClick={()=>toggle(activePhase,i)}
-                 style={{display:"flex",alignItems:"flex-start",gap:12,padding:"14px 16px",
+                 style={{display:"flex",
+                         alignItems: settings.centerText ? "center" : "flex-start",
+                         gap:12,padding:"14px 16px",
                          marginBottom:8,borderRadius:8,cursor:isWarn?"default":"pointer",
                          background:isConfirmed?"#00ff8808":isCompleting?`${accent}10`:isWarn?`${border}11`:`${border}22`,
                          border:`1px solid ${isConfirmed?"#4CAF5044":isWarn?"#FF174433":border}`,
@@ -1854,11 +1859,13 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
                   {(done||isCompleting)&&<span style={{color:"#000",fontSize:14,fontWeight:"bold",lineHeight:1}}>✓</span>}
                 </div>
               )}
-              {!isWarn&&<span style={{fontSize:13,color:textDim,width:22,flexShrink:0,letterSpacing:1,paddingTop:2,fontWeight:"bold"}}>{String(i+1).padStart(2,"0")}</span>}
+              {!isWarn&&<span style={{fontSize:13,color:textDim,width:22,flexShrink:0,letterSpacing:1,paddingTop: settings.centerText ? 0 : 2,fontWeight:"bold", textAlign: settings.centerText ? "center" : "left"}}>{String(i+1).padStart(2,"0")}</span>}
               <span style={{fontSize:isWarn?14:15,letterSpacing:0.2,fontWeight:isWarn?"bold":"normal",
                             color:isConfirmed?"#4CAF50":isWarn?"#FF5252":text,
                             textDecoration:isConfirmed?"line-through":"none",
-                            transition:"all 0.2s",flex:1,lineHeight:1.5}}>
+                            transition:"all 0.2s",flex:1,lineHeight:1.5,
+                            textAlign: settings.centerText ? "center" : "left"
+                            }}>
                 {it}
               </span>
             </div>
