@@ -1,4 +1,4 @@
-const CACHE = 'flight-checklist-v6';
+const CACHE = 'preflight-v1';
 
 const ASSETS = [
   './',
@@ -23,7 +23,9 @@ function isAppDocument(request) {
 }
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+  e.waitUntil(
+    caches.open(CACHE).then(cache => cache.addAll(ASSETS)).catch(() => {})
+  );
   self.skipWaiting();
 });
 
@@ -48,7 +50,6 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
-
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );

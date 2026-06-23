@@ -3,14 +3,18 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-  <title>Flight Checklist</title>
-  <meta name="description" content="Aviation checklist app — bilingual EN/ES for C152, PA-28 and C172 CAPE Aircraft."/>
+  <title>Preflight</title>
+  <meta name="description" content="Preflight — Aviation suite EN/ES for C152, PA-28 and C172. Checklists, Weight &amp; Balance, Administration."/>
   <meta name="theme-color" content="#0a0e14"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
-  <meta name="apple-mobile-web-app-title" content="Flight Checklist"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Preflight"/>
   <link rel="manifest" href="manifest.json"/>
-  <link rel="icon" type="image/png" href="icon-192.png"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png"/>
+  <link rel="apple-touch-icon" href="icon-192.png"/>
+  <link rel="apple-touch-icon" sizes="152x152" href="icon-192.png"/>
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-192.png"/>
+  <link rel="apple-touch-icon" sizes="167x167" href="icon-192.png"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -91,6 +95,55 @@ const T = {
 
 const SETTINGS_KEY = "flightChecklistSettings";
 const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,centerText:true,largeText:false,lang:"en"};
+const ADMIN_KEY = "preflightAdmin_v1";
+const CUSTOM_AC_KEY = "preflightCustomAC_v1";
+const CUSTOM_LISTS_KEY = "preflightCustomLists_v1";
+const CL_OVERRIDES_KEY = "preflightCLOverrides_v1";
+
+function loadAdminCfg(){try{return JSON.parse(localStorage.getItem(ADMIN_KEY))||{};}catch{return {};}}
+function saveAdminCfg(c){try{localStorage.setItem(ADMIN_KEY,JSON.stringify(c));}catch{}}
+function loadCustomAC(){try{return JSON.parse(localStorage.getItem(CUSTOM_AC_KEY))||[];}catch{return [];}}
+function saveCustomAC(l){try{localStorage.setItem(CUSTOM_AC_KEY,JSON.stringify(l));}catch{}}
+function loadCLOverrides(){try{return JSON.parse(localStorage.getItem(CL_OVERRIDES_KEY))||{};}catch{return {};}}
+function saveCLOverrides(o){try{localStorage.setItem(CL_OVERRIDES_KEY,JSON.stringify(o));}catch{}}
+
+const WB_DATA = {
+  c152:{
+    stations:[
+      {id:"frontSeats",label:"Front Seats / Asientos Delanteros",arm:35.0,max:340},
+      {id:"fuel",label:"Fuel / Combustible (gal)",arm:24.0,max:24.5,isFuel:true,density:6.0},
+      {id:"baggage",label:"Baggage / Equipaje",arm:49.0,max:120},
+    ],
+    maxGross:1670,
+    envelope:[{w:1670,fwd:33.0,aft:37.5},{w:1100,fwd:33.0,aft:37.5}]
+  },
+  c172:{
+    stations:[
+      {id:"frontSeats",label:"Front Seats / Asientos Delanteros",arm:37.0,max:340},
+      {id:"rearSeats",label:"Rear Seats / Asientos Traseros",arm:73.0,max:340},
+      {id:"fuel",label:"Fuel / Combustible (gal)",arm:48.0,max:53,isFuel:true,density:6.0},
+      {id:"baggageA",label:"Baggage A / Equipaje A",arm:95.0,max:120},
+    ],
+    maxGross:2550,
+    envelope:[{w:2550,fwd:35.0,aft:47.3},{w:1950,fwd:35.0,aft:40.5}]
+  },
+  pa28:{
+    stations:[
+      {id:"frontSeats",label:"Front Seats / Asientos Delanteros",arm:86.4,max:400},
+      {id:"rearSeats",label:"Rear Seats / Asientos Traseros",arm:118.1,max:400},
+      {id:"fuel",label:"Fuel / Combustible (gal)",arm:95.0,max:50,isFuel:true,density:6.0},
+      {id:"baggage",label:"Baggage / Equipaje",arm:142.8,max:200},
+    ],
+    maxGross:2400,
+    envelope:[{w:2400,fwd:86.7,aft:93.0},{w:1500,fwd:82.0,aft:93.0}]
+  }
+};
+
+const WB_EMPTY = {
+  "c152-cc-kik":{w:1113,arm:39.0},"c152-cc-kse":{w:1113,arm:39.0},"c152-cc-cny":{w:1113,arm:39.0},
+  "c172-cc-psb":{w:1400,arm:41.0},
+  "pa28-cc-kif":{w:1370,arm:87.1},"pa28-cc-kih":{w:1370,arm:87.1},"pa28-cc-kid":{w:1370,arm:87.1},
+};
 
 function normalizeLang(lang){
   if(lang==="fr") return "es";
@@ -1674,7 +1727,13 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
   const ac = isCustom ? null : AIRCRAFT[aircraftId];
   const allPhases = isCustom
     ? Object.fromEntries(customEntry.phases.map(p=>[p.name,p.items.filter(i=>i.trim())]))
-    : checklistFor(ac, settings);
+    : (()=>{
+        const overrides = loadCLOverrides();
+        if(overrides[aircraftId]){
+          return Object.fromEntries(overrides[aircraftId].map(p=>[p.name,p.items.filter(i=>i.trim())]));
+        }
+        return checklistFor(ac, settings);
+      })();
 
   const phases = Object.keys(allPhases);
   const [activePhase,setActivePhase] = useState(phases[0]);
@@ -1922,29 +1981,22 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
   );
 }
 
-// ── HOME SCREEN (AIRCRAFT TYPE) ─────────────────────────────────────────────
-function HomeScreen({onSelect,onCustom,onSettings,settings}){
+// ── CHECKLIST HOME (aircraft type selection) ──────────────────────────────
+function ChecklistHomeScreen({onSelect,onCustom,onBack,settings,customLists}){
   const t = uiT(settings);
   const [hov,setHov] = useState(null);
-
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
   const border = settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
   const text = settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
   const textDim = settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
   const accent = settings.milGreen?"#8fbc5a":"#4FC3F7";
-
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 20px",display:"flex",flexDirection:"column"}}>
-      {/* Title */}
-      <div style={{textAlign:"center",marginBottom:24,marginTop:20}}>
-        <div style={{fontSize:40,marginBottom:8,filter:`drop-shadow(0 0 20px ${accent}aa)`,animation:"float 3s ease-in-out infinite"}}>✈</div>
-        <div style={{fontSize:11,letterSpacing:6,color:accent,marginBottom:6}}>AVIATION CHECKLISTS</div>
-        <div style={{fontSize:22,fontWeight:"bold",letterSpacing:3,color:text}}>FLIGHT CHECKLISTS</div>
-        <div style={{fontSize:12,color:textDim,marginTop:4,letterSpacing:2}}>{t.selectAircraftType}</div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11,letterSpacing:1}}>{t.back}</button>
+        <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:6,color:accent}}>CHECKLIST</div>
       </div>
-
-      {/* Aircraft type cards */}
       {TYPE_ORDER.map(typeId=>{
         const meta = TYPE_META[typeId];
         const count = Object.values(AIRCRAFT).filter(a=>a.aircraftType===typeId).length;
@@ -1961,18 +2013,13 @@ function HomeScreen({onSelect,onCustom,onSettings,settings}){
               {meta.icon}
             </div>
             <div style={{flex:1}}>
-              <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:isHov?meta.color:text,
-                           transition:"color 0.2s",marginBottom:3}}>{meta.label}</div>
-              <div style={{fontSize:12,color:textDim,letterSpacing:1}}>
-                {meta.short} · {count} {count===1?"aircraft":"aircraft"}
-              </div>
+              <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:isHov?meta.color:text,transition:"color 0.2s",marginBottom:3}}>{meta.label}</div>
+              <div style={{fontSize:12,color:textDim,letterSpacing:1}}>{meta.short} · {count} aircraft</div>
             </div>
             <div style={{fontSize:22,color:isHov?meta.color:border,transition:"all 0.2s"}}>›</div>
           </div>
         );
       })}
-
-      {/* Custom checklists card */}
       <div onClick={onCustom}
            onMouseEnter={()=>setHov("custom")} onMouseLeave={()=>setHov(null)}
            style={{background:cardBg,border:`1.5px solid ${hov==="custom"?accent:border}`,borderRadius:10,
@@ -1984,32 +2031,502 @@ function HomeScreen({onSelect,onCustom,onSettings,settings}){
           <UserLogo size={46} color={accent}/>
         </div>
         <div style={{flex:1}}>
-          <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:hov==="custom"?accent:text,
-                       transition:"color 0.2s",marginBottom:3}}>{t.customClubName}</div>
-          <div style={{fontSize:12,color:textDim,letterSpacing:1}}>{t.newChecklist}</div>
+          <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:hov==="custom"?accent:text,transition:"color 0.2s",marginBottom:3}}>{t.customClubName}</div>
+          <div style={{fontSize:12,color:textDim,letterSpacing:1}}>{customLists.length} {t.custom}</div>
         </div>
         <div style={{fontSize:22,color:hov==="custom"?accent:border,transition:"all 0.2s"}}>›</div>
       </div>
-      
-      {/* Settings card */}
-      <div onClick={onSettings}
-           onMouseEnter={()=>setHov("settings")} onMouseLeave={()=>setHov(null)}
-           style={{background:cardBg,border:`1.5px solid ${hov==="settings"?accent:border}`,borderRadius:10,
-                   padding:"20px 18px",marginBottom:12,cursor:"pointer",
-                   boxShadow:hov==="settings"?`0 0 20px ${accent}33`:"none",transition:"all 0.2s",
-                   display:"flex",alignItems:"center",gap:14}}>
-        <div style={{width:60,height:60,background:`${accent}18`,border:`1px solid ${accent}44`,
-                     borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:28}}>
-          ⚙
-        </div>
+    </div>
+  );
+}
+
+// ── WEIGHT & BALANCE ────────────────────────────────────────────────────────
+function WBCalculatorScreen({aircraftId,onBack,settings}){
+  const ac = AIRCRAFT[aircraftId];
+  const wbData = WB_DATA[ac.aircraftType];
+  const empty = WB_EMPTY[aircraftId]||{w:1200,arm:40.0};
+  const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
+  const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
+  const border = settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
+  const text = settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
+  const textDim = settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
+  const accent = ac.color;
+  const [vals,setVals] = useState({});
+  const upd = (id,v)=>setVals(p=>({...p,[id]:v}));
+  const emMom = empty.w*empty.arm;
+  const totals = wbData.stations.reduce((acc,st)=>{
+    const raw=parseFloat(vals[st.id])||0;
+    const w=st.isFuel?raw*st.density:raw;
+    return {w:acc.w+w,m:acc.m+w*st.arm};
+  },{w:0,m:0});
+  const totalW=empty.w+totals.w, totalM=emMom+totals.m, cg=totalW>0?totalM/totalW:0;
+  const overW=totalW>wbData.maxGross;
+  const env=wbData.envelope[0];
+  const cgOk=cg>=env.fwd&&cg<=env.aft;
+  const sc=overW?"#FF5252":!cgOk?"#FF9800":"#4CAF50";
+  const st=overW?"OVER WEIGHT!":!cgOk?"CG OUT OF RANGE":"WITHIN LIMITS ✓";
+  return (
+    <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
         <div style={{flex:1}}>
-          <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:hov==="settings"?accent:text,
-                       transition:"color 0.2s",marginBottom:3}}>{t.settingsTitle}</div>
-          <div style={{fontSize:12,color:textDim,letterSpacing:1}}>{t.settingsDesc}</div>
+          <div style={{fontSize:10,letterSpacing:3,color:accent}}>PESO Y BALANCE · W&B</div>
+          <div style={{fontSize:16,fontWeight:"bold",color:text}}>{ac.name} <span style={{fontSize:11,color:accent,padding:"2px 6px",background:`${accent}22`,border:`1px solid ${accent}44`,borderRadius:3}}>{ac.registration}</span></div>
         </div>
-        <div style={{fontSize:22,color:hov==="settings"?accent:border,transition:"all 0.2s"}}>›</div>
       </div>
-      
+      <div style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between"}}>
+          <span style={{fontSize:11,color:textDim,letterSpacing:1}}>EMPTY WEIGHT / PESO BÁSICO</span>
+          <span style={{fontSize:14,fontWeight:"bold",color:accent}}>{empty.w} lbs</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+          <span style={{fontSize:10,color:textDim}}>Arm: {empty.arm} in</span>
+          <span style={{fontSize:10,color:textDim}}>Moment: {emMom.toFixed(1)}</span>
+        </div>
+      </div>
+      {wbData.stations.map(st=>{
+        const raw=vals[st.id]||""; const parsed=parseFloat(raw)||0;
+        const w=st.isFuel?parsed*st.density:parsed; const m=w*st.arm;
+        return (
+          <div key={st.id} style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+            <div style={{fontSize:11,letterSpacing:1,color:accent,marginBottom:8}}>{st.label}</div>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <input type="number" value={raw} onChange={e=>upd(st.id,e.target.value)}
+                     placeholder={st.isFuel?"Gallons":"Lbs"}
+                     style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:text,padding:"8px 10px",borderRadius:4,fontSize:14,outline:"none"}}/>
+              <div style={{textAlign:"right",minWidth:90}}>
+                <div style={{fontSize:13,color:text}}>{w.toFixed(1)} lbs</div>
+                <div style={{fontSize:10,color:textDim}}>M: {m.toFixed(1)}</div>
+              </div>
+            </div>
+            <div style={{fontSize:10,color:textDim,marginTop:4}}>Arm: {st.arm} in · Max: {st.max} {st.isFuel?"gal":"lbs"}</div>
+          </div>
+        );
+      })}
+      <div style={{background:`${sc}14`,border:`2px solid ${sc}44`,borderRadius:10,padding:"16px 14px",marginTop:8}}>
+        <div style={{fontSize:10,letterSpacing:3,color:sc,marginBottom:10}}>RESULTADO · RESULT</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+          {[{l:"PESO TOTAL",v:`${totalW.toFixed(1)} lbs`,s:`Max: ${wbData.maxGross}`},
+            {l:"MOMENTO",v:totalM.toFixed(1),s:"in·lbs"},
+            {l:"C.G.",v:`${cg.toFixed(2)} in`,s:`${env.fwd}–${env.aft} in`}
+          ].map(({l,v,s})=>(
+            <div key={l} style={{textAlign:"center",background:cardBg,borderRadius:6,padding:"8px 4px"}}>
+              <div style={{fontSize:9,letterSpacing:1,color:textDim,marginBottom:4}}>{l}</div>
+              <div style={{fontSize:13,fontWeight:"bold",color:text}}>{v}</div>
+              <div style={{fontSize:9,color:textDim}}>{s}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{textAlign:"center",fontSize:14,fontWeight:"bold",letterSpacing:2,color:sc}}>{st}</div>
+      </div>
+    </div>
+  );
+}
+
+function WeightBalanceScreen({onBack,settings}){
+  const [selType,setSelType]=useState(null);
+  const [selAcId,setSelAcId]=useState(null);
+  const bg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
+  const cardBg=settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
+  const border=settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
+  const text=settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
+  const textDim=settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
+  const accent=settings.milGreen?"#8fbc5a":"#4FC3F7";
+  if(selAcId) return <WBCalculatorScreen aircraftId={selAcId} onBack={()=>setSelAcId(null)} settings={settings}/>;
+  if(selType){
+    const typeAc=Object.entries(AIRCRAFT).filter(([_,ac])=>ac.aircraftType===selType);
+    const meta=TYPE_META[selType];
+    return (
+      <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 20px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+          <button onClick={()=>setSelType(null)} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
+          <div style={{fontSize:11,letterSpacing:3,color:accent}}>{meta.label.toUpperCase()}</div>
+        </div>
+        {typeAc.map(([id,ac])=>(
+          <div key={id} onClick={()=>setSelAcId(id)}
+               style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"14px 16px",marginBottom:10,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:48,height:48,background:`${ac.color}18`,border:`1px solid ${ac.color}44`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{ac.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:16,fontWeight:"bold",color:text}}>{ac.name}</div>
+              <span style={{fontSize:11,padding:"2px 7px",background:`${ac.color}22`,border:`1px solid ${ac.color}44`,borderRadius:4,color:ac.color}}>{ac.registration}</span>
+            </div>
+            <div style={{fontSize:20,color:border}}>›</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 20px",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
+        <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:5,color:accent}}>PESO Y BALANCE</div>
+      </div>
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:42,marginBottom:8}}>⚖</div>
+        <div style={{fontSize:12,color:textDim,letterSpacing:2}}>SELECCIONA AERONAVE · SELECT AIRCRAFT</div>
+      </div>
+      {TYPE_ORDER.filter(t=>WB_DATA[t]).map(typeId=>{
+        const meta=TYPE_META[typeId];
+        return (
+          <div key={typeId} onClick={()=>setSelType(typeId)}
+               style={{background:cardBg,border:`1.5px solid ${border}`,borderRadius:10,padding:"20px 18px",marginBottom:12,cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:60,height:60,background:`${meta.color}18`,border:`1px solid ${meta.color}44`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:28}}>{meta.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:text,marginBottom:3}}>{meta.label}</div>
+              <div style={{fontSize:12,color:textDim,letterSpacing:1}}>{meta.short}</div>
+            </div>
+            <div style={{fontSize:22,color:border}}>›</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── ADMIN ───────────────────────────────────────────────────────────────────
+function AircraftEditor({initial,onSave,onCancel,colors}){
+  const {border,text,textDim,accent}=colors;
+  const [name,setName]=useState(initial?.name||"");
+  const [reg,setReg]=useState(initial?.registration||"");
+  const [type,setType]=useState(initial?.aircraftType||"c152");
+  const [color,setColor]=useState(initial?.color||"#4FC3F7");
+  const [desc,setDesc]=useState(initial?.description||"");
+  const COLS=["#42A5F5","#66BB6A","#FF7043","#FF9800","#AB47BC","#26C6DA","#EC407A","#78909C"];
+  const INP={width:"100%",background:"transparent",border:`1px solid ${border}`,color:text,padding:"10px 12px",borderRadius:4,fontSize:14,outline:"none",marginBottom:10,boxSizing:"border-box"};
+  const save=()=>{if(!name.trim()||!reg.trim())return;onSave({...(initial||{}),name:name.trim(),registration:reg.trim().toUpperCase(),aircraftType:type,type:"Single Engine Piston",color,description:desc.trim(),icon:"✈"});};
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+        <button onClick={onCancel} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ CANCELAR</button>
+        <div style={{flex:1,fontSize:11,letterSpacing:2,color:accent}}>{initial?"EDITAR":"NUEVA"} AERONAVE</div>
+        <button onClick={save} style={{background:`${accent}22`,border:`1px solid ${accent}`,color:accent,padding:"5px 12px",borderRadius:4,cursor:"pointer",fontSize:11}}>GUARDAR</button>
+      </div>
+      <div style={{fontSize:10,letterSpacing:2,color:textDim,marginBottom:4}}>NOMBRE</div>
+      <input value={name} onChange={e=>setName(e.target.value)} placeholder="Cessna 152" style={INP}/>
+      <div style={{fontSize:10,letterSpacing:2,color:textDim,marginBottom:4}}>MATRÍCULA</div>
+      <input value={reg} onChange={e=>setReg(e.target.value)} placeholder="CC-XXX" style={INP}/>
+      <div style={{fontSize:10,letterSpacing:2,color:textDim,marginBottom:4}}>DESCRIPCIÓN</div>
+      <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="2-seat trainer" style={INP}/>
+      <div style={{fontSize:10,letterSpacing:2,color:textDim,marginBottom:8}}>TIPO (checklist & P&B)</div>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {["c152","c172","pa28"].map(tp=>(
+          <button key={tp} onClick={()=>setType(tp)}
+                  style={{flex:1,padding:"8px 0",background:type===tp?accent+"22":"transparent",border:`1px solid ${type===tp?accent:border}`,color:type===tp?accent:textDim,fontSize:10,letterSpacing:1,cursor:"pointer",borderRadius:4}}>
+            {tp.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:10,letterSpacing:2,color:textDim,marginBottom:8}}>COLOR</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+        {COLS.map(c=>(
+          <div key={c} onClick={()=>setColor(c)}
+               style={{width:36,height:36,background:c,borderRadius:6,cursor:"pointer",border:color===c?"3px solid white":"3px solid transparent",boxSizing:"border-box"}}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminAircraftTab({customAC,onUpdate,settings,colors}){
+  const {cardBg,border,text,textDim,accent}=colors;
+  const [editing,setEditing]=useState(null);
+  const builtIn=Object.entries(AIRCRAFT).map(([id,ac])=>({...ac,id}));
+  if(editing!==null){
+    return <AircraftEditor
+      initial={editing==="new"?null:editing}
+      onSave={ac=>{
+        const withId={...ac,id:editing==="new"?"custom-"+Date.now():editing.id};
+        onUpdate(editing==="new"?[...customAC,withId]:customAC.map(a=>a.id===editing.id?withId:a));
+        setEditing(null);
+      }}
+      onCancel={()=>setEditing(null)}
+      settings={settings} colors={colors}/>;
+  }
+  return (
+    <div>
+      <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:8}}>INSTALADAS / BUILT-IN</div>
+      {builtIn.map(ac=>(
+        <div key={ac.id} style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"11px 14px",marginBottom:7,display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:38,height:38,background:`${ac.color}18`,border:`1px solid ${ac.color}44`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>✈</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:"bold",color:text}}>{ac.name}</div>
+            <div style={{fontSize:11,color:ac.color}}>{ac.registration}</div>
+          </div>
+          <div style={{fontSize:9,color:textDim,padding:"2px 6px",border:`1px solid ${border}`,borderRadius:3}}>BUILT-IN</div>
+        </div>
+      ))}
+      <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:8,marginTop:16}}>PERSONALIZADAS</div>
+      {customAC.length===0&&<div style={{textAlign:"center",padding:"16px",color:textDim,fontSize:11}}>Sin aeronaves personalizadas</div>}
+      {customAC.map(ac=>(
+        <div key={ac.id} style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"11px 14px",marginBottom:7,display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:38,height:38,background:`${ac.color||accent}18`,border:`1px solid ${ac.color||accent}44`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>✈</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:"bold",color:text}}>{ac.name}</div>
+            <div style={{fontSize:11,color:ac.color||accent}}>{ac.registration}</div>
+          </div>
+          <button onClick={()=>setEditing(ac)} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"4px 8px",borderRadius:3,cursor:"pointer",fontSize:9}}>EDITAR</button>
+          <button onClick={()=>onUpdate(customAC.filter(a=>a.id!==ac.id))} style={{background:"transparent",border:"1px solid #FF174444",color:"#FF1744",padding:"4px 8px",borderRadius:3,cursor:"pointer",fontSize:9}}>✕</button>
+        </div>
+      ))}
+      <button onClick={()=>setEditing("new")}
+              style={{width:"100%",marginTop:8,padding:"12px 0",background:`${accent}14`,border:`1.5px dashed ${accent}`,color:accent,fontSize:11,cursor:"pointer",borderRadius:6,letterSpacing:2}}>
+        + AGREGAR AERONAVE
+      </button>
+    </div>
+  );
+}
+
+function AdminChecklistEditor({acName,phases,onSave,onBack,colors}){
+  const {border,text,textDim,accent}=colors;
+  const [ep,setEp]=useState(phases);
+  const [activeP,setActiveP]=useState(0);
+  const p=ep[activeP]||ep[0];
+  const updName=(i,v)=>setEp(ps=>ps.map((ph,idx)=>idx===i?{...ph,name:v.toUpperCase()}:ph));
+  const updItem=(pi,ii,v)=>setEp(ps=>ps.map((ph,idx)=>idx===pi?{...ph,items:ph.items.map((it,iix)=>iix===ii?v:it)}:ph));
+  const addItem=(pi)=>setEp(ps=>ps.map((ph,idx)=>idx===pi?{...ph,items:[...ph.items,""]}:ph));
+  const remItem=(pi,ii)=>setEp(ps=>ps.map((ph,idx)=>idx===pi?{...ph,items:ph.items.filter((_,iix)=>iix!==ii)}:ph));
+  const addPhase=()=>{setEp(ps=>[...ps,{name:"NEW PHASE",items:[""]}]);setActiveP(ep.length);};
+  const remPhase=(i)=>{if(ep.length<=1)return;const np=ep.filter((_,idx)=>idx!==i);setEp(np);setActiveP(Math.min(i,np.length-1));};
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹</button>
+        <div style={{flex:1,fontSize:11,color:accent,letterSpacing:1}}>{acName}</div>
+        <button onClick={()=>{onSave(ep);onBack();}} style={{background:`${accent}22`,border:`1px solid ${accent}`,color:accent,padding:"5px 12px",borderRadius:4,cursor:"pointer",fontSize:11}}>GUARDAR</button>
+      </div>
+      <div style={{display:"flex",overflowX:"auto",gap:4,marginBottom:8,scrollbarWidth:"none"}}>
+        {ep.map((ph,i)=>(
+          <button key={i} onClick={()=>setActiveP(i)}
+                  style={{flexShrink:0,padding:"4px 8px",background:i===activeP?accent+"18":"transparent",border:`1px solid ${i===activeP?accent:border}`,color:i===activeP?accent:textDim,fontSize:8,letterSpacing:1,cursor:"pointer",borderRadius:3,whiteSpace:"nowrap"}}>
+            {ph.name||"PHASE"}
+          </button>
+        ))}
+        <button onClick={addPhase} style={{flexShrink:0,padding:"4px 8px",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:8,cursor:"pointer",borderRadius:3}}>+</button>
+      </div>
+      {p&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            <input value={p.name} onChange={e=>updName(activeP,e.target.value)}
+                   style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:accent,padding:"5px 8px",borderRadius:3,fontSize:12,outline:"none"}}/>
+            {ep.length>1&&<button onClick={()=>remPhase(activeP)} style={{background:"transparent",border:"1px solid #FF174444",color:"#FF1744",padding:"4px 8px",borderRadius:3,cursor:"pointer",fontSize:10}}>✕</button>}
+          </div>
+          {p.items.map((item,ii)=>(
+            <div key={ii} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+              <div style={{width:16,height:16,border:`1px solid ${border}`,borderRadius:2,flexShrink:0}}/>
+              <input value={item} onChange={e=>updItem(activeP,ii,e.target.value)} placeholder="Item..."
+                     style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:text,padding:"5px 8px",borderRadius:3,fontSize:13,outline:"none"}}/>
+              <button onClick={()=>remItem(activeP,ii)} style={{background:"transparent",border:"none",color:textDim,cursor:"pointer",fontSize:13,padding:"0 4px"}}>✕</button>
+            </div>
+          ))}
+          <button onClick={()=>addItem(activeP)}
+                  style={{width:"100%",marginTop:4,padding:"6px 0",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:10,cursor:"pointer",borderRadius:3}}>
+            + ADD ITEM
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminChecklistsTab({settings,colors}){
+  const {cardBg,border,text,textDim,accent}=colors;
+  const [selId,setSelId]=useState(null);
+  const [overrides,setOverrides]=useState(loadCLOverrides);
+  if(selId){
+    const ac=AIRCRAFT[selId];
+    const base=checklistFor(ac,settings);
+    const cur=overrides[selId]||Object.entries(base).map(([name,items])=>({name,items}));
+    return <AdminChecklistEditor
+      acName={`${ac.name} ${ac.registration}`}
+      phases={cur}
+      onSave={phases=>{const o={...overrides,[selId]:phases};setOverrides(o);saveCLOverrides(o);}}
+      onBack={()=>setSelId(null)}
+      settings={settings} colors={colors}/>;
+  }
+  return (
+    <div>
+      <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:10}}>SELECCIONAR AERONAVE</div>
+      {Object.entries(AIRCRAFT).map(([id,ac])=>(
+        <div key={id} onClick={()=>setSelId(id)}
+             style={{background:cardBg,border:`1px solid ${overrides[id]?"#4CAF5066":border}`,borderRadius:8,padding:"12px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:38,height:38,background:`${ac.color}18`,border:`1px solid ${ac.color}44`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>✈</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:"bold",color:text}}>{ac.name}</div>
+            <div style={{fontSize:11,color:ac.color}}>{ac.registration}</div>
+          </div>
+          {overrides[id]&&<div style={{fontSize:9,color:"#4CAF50",letterSpacing:1}}>EDITADO</div>}
+          <div style={{fontSize:20,color:border}}>›</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AdminScreen({onBack,settings}){
+  const [adminCfg,setAdminCfg]=useState(loadAdminCfg);
+  const [isAuth,setIsAuth]=useState(false);
+  const [pw,setPw]=useState("");
+  const [pwErr,setPwErr]=useState(false);
+  const [tab,setTab]=useState("aircraft");
+  const [customAC,setCustomAC]=useState(loadCustomAC);
+  const bg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
+  const cardBg=settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
+  const border=settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
+  const text=settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
+  const textDim=settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
+  const accent=settings.milGreen?"#8fbc5a":"#4FC3F7";
+  const colors={bg,cardBg,border,text,textDim,accent};
+  const defPw=adminCfg.password||"admin1234";
+  const tryLogin=()=>{if(pw===defPw){setIsAuth(true);setPwErr(false);}else{setPwErr(true);}};
+  const updAC=(list)=>{setCustomAC(list);saveCustomAC(list);};
+  if(!isAuth){
+    return (
+      <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+        <div style={{fontSize:40,marginBottom:12}}>🔐</div>
+        <div style={{fontSize:11,letterSpacing:4,color:accent,marginBottom:24}}>ADMINISTRACIÓN</div>
+        <div style={{width:"100%",maxWidth:320}}>
+          <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setPwErr(false);}}
+                 onKeyDown={e=>e.key==="Enter"&&tryLogin()} placeholder="Contraseña / Password"
+                 style={{width:"100%",background:"transparent",border:`1px solid ${pwErr?"#FF5252":border}`,color:text,
+                         padding:"12px 14px",borderRadius:6,fontSize:14,outline:"none",marginBottom:8,textAlign:"center",boxSizing:"border-box"}}/>
+          {pwErr&&<div style={{color:"#FF5252",fontSize:11,textAlign:"center",marginBottom:8,letterSpacing:1}}>CONTRASEÑA INCORRECTA</div>}
+          <button onClick={tryLogin}
+                  style={{width:"100%",padding:"12px 0",background:`${accent}22`,border:`1px solid ${accent}`,color:accent,fontSize:13,letterSpacing:2,cursor:"pointer",borderRadius:6,marginBottom:10}}>
+            INGRESAR
+          </button>
+          <button onClick={onBack}
+                  style={{width:"100%",padding:"10px 0",background:"transparent",border:`1px solid ${border}`,color:textDim,fontSize:11,letterSpacing:1,cursor:"pointer",borderRadius:4}}>
+            ‹ VOLVER / BACK
+          </button>
+        </div>
+        <div style={{position:"absolute",bottom:30,fontSize:10,color:textDim,letterSpacing:1,textAlign:"center"}}>
+          Contraseña por defecto: admin1234
+        </div>
+      </div>
+    );
+  }
+  const TABS=[{id:"aircraft",label:"AERONAVES"},{id:"checklists",label:"CHECKLISTS"},{id:"pbConfig",label:"P&B CONFIG"}];
+  return (
+    <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column"}}>
+      <div style={{padding:"16px 14px 10px",borderBottom:`1px solid ${border}`,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
+          <div style={{flex:1,fontSize:11,letterSpacing:4,color:accent}}>ADMINISTRACIÓN</div>
+          <button onClick={()=>setIsAuth(false)} style={{background:"transparent",border:"none",color:textDim,fontSize:10,cursor:"pointer",letterSpacing:1}}>SALIR</button>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+                    style={{flex:1,padding:"8px 4px",background:tab===t.id?accent+"18":"transparent",border:`1px solid ${tab===t.id?accent:border}`,color:tab===t.id?accent:textDim,fontSize:9,letterSpacing:1,cursor:"pointer",borderRadius:4}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{flex:1,overflow:"auto",padding:"14px 14px 80px"}}>
+        {tab==="aircraft"&&<AdminAircraftTab customAC={customAC} onUpdate={updAC} settings={settings} colors={colors}/>}
+        {tab==="checklists"&&<AdminChecklistsTab settings={settings} colors={colors}/>}
+        {tab==="pbConfig"&&(
+          <div style={{textAlign:"center",padding:"60px 20px"}}>
+            <div style={{fontSize:40,marginBottom:12}}>⚖</div>
+            <div style={{fontSize:12,color:textDim,letterSpacing:2}}>P&B CONFIGURATION</div>
+            <div style={{fontSize:11,color:textDim,marginTop:8}}>Próximamente · Coming soon</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── OPTIONS SCREEN ──────────────────────────────────────────────────────────
+function OptionsScreen({onBack,settings,setSettings}){
+  const t=uiT(settings);
+  const lang=uiLang(settings);
+  const bg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
+  const border=settings.milGreen?"#3a5020":settings.whiteMode?"#d0dde8":"#1e2a3a";
+  const text=settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
+  const accent=settings.milGreen?"#8fbc5a":"#4FC3F7";
+  const toggle=(k)=>setSettings(s=>({...s,[k]:!s[k]}));
+  const setLang=(l)=>setSettings(s=>({...s,lang:normalizeLang(l)}));
+  return (
+    <div style={{minHeight:"100vh",background:bg,padding:"16px 20px 40px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:24}}>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:text,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11,letterSpacing:1}}>‹ BACK</button>
+        <div style={{flex:1,fontSize:11,letterSpacing:4,color:accent,textAlign:"center"}}>{t.settingsTitle}</div>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:11,letterSpacing:3,color:accent,marginBottom:8}}>{t.lang.toUpperCase()}</div>
+        <div style={{display:"flex",gap:8}}>
+          {["en","es"].map(l=>(
+            <button key={l} onClick={()=>setLang(l)}
+                    style={{flex:1,padding:"10px 0",background:lang===l?accent+"22":"transparent",border:`1px solid ${lang===l?accent:border}`,color:lang===l?accent:text,fontSize:15,cursor:"pointer",borderRadius:4,letterSpacing:2}}>
+              {l==="en"?"EN":"ES"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {[{k:"whiteMode",label:t.whiteMode},{k:"milGreen",label:t.milGreen},{k:"autoAdvance",label:t.autoAdvance},
+        {k:"floatDone",label:t.floatDone},{k:"centerText",label:t.centerText},{k:"largeText",label:t.largeText}
+      ].map(({k,label})=>(
+        <div key={k} onClick={()=>toggle(k)}
+             style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 14px",marginBottom:8,cursor:"pointer",
+                     background:settings[k]?accent+"14":"transparent",border:`1px solid ${settings[k]?accent:border}`,borderRadius:5,transition:"all 0.15s"}}>
+          <span style={{fontSize:15,color:text,letterSpacing:1}}>{label}</span>
+          <div style={{width:42,height:24,borderRadius:12,background:settings[k]?accent:"#1e2a3a",position:"relative",transition:"background 0.2s",border:`1px solid ${settings[k]?accent:border}`}}>
+            <div style={{position:"absolute",top:3,left:settings[k]?21:3,width:16,height:16,borderRadius:"50%",background:settings[k]?bg:"#4a6080",transition:"left 0.2s"}}/>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── MAIN MENU ───────────────────────────────────────────────────────────────
+function MainMenuScreen({onChecklist,onWeightBalance,onAdmin,onOptions,settings}){
+  const bg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
+  const cardBg=settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
+  const border=settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
+  const text=settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
+  const textDim=settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
+  const accent=settings.milGreen?"#8fbc5a":"#4FC3F7";
+  const [hov,setHov]=useState(null);
+  const ITEMS=[
+    {id:"checklist",label:"CHECKLIST",desc:"Normal & Emergency Procedures",icon:"☑",color:"#4FC3F7",action:onChecklist},
+    {id:"wb",label:"PESO Y BALANCE",desc:"Weight & Balance · CG Calculator",icon:"⚖",color:"#66BB6A",action:onWeightBalance},
+    {id:"admin",label:"ADMINISTRACIÓN",desc:"Aircraft & Checklist Management",icon:"🔧",color:"#FF9800",action:onAdmin},
+    {id:"options",label:"OPCIONES",desc:"Settings & Preferences",icon:"⚙",color:"#AB47BC",action:onOptions},
+  ];
+  return (
+    <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 20px",display:"flex",flexDirection:"column"}}>
+      <div style={{textAlign:"center",marginBottom:32,marginTop:16}}>
+        <div style={{fontSize:48,marginBottom:10,filter:`drop-shadow(0 0 24px ${accent}aa)`,animation:"float 3s ease-in-out infinite"}}>✈</div>
+        <div style={{fontSize:9,letterSpacing:8,color:accent,marginBottom:4}}>AVIATION SUITE</div>
+        <div style={{fontSize:28,fontWeight:"bold",letterSpacing:5,color:text}}>PREFLIGHT</div>
+        <div style={{fontSize:10,color:textDim,marginTop:4,letterSpacing:3}}>CAPE FLIGHT TRAINING</div>
+      </div>
+      {ITEMS.map(item=>{
+        const isHov=hov===item.id;
+        return (
+          <div key={item.id} onClick={item.action}
+               onMouseEnter={()=>setHov(item.id)} onMouseLeave={()=>setHov(null)}
+               style={{background:cardBg,border:`1.5px solid ${isHov?item.color:border}`,borderRadius:14,
+                       padding:"22px 20px",marginBottom:14,cursor:"pointer",
+                       boxShadow:isHov?`0 0 24px ${item.color}33`:"none",transition:"all 0.2s",
+                       display:"flex",alignItems:"center",gap:18}}>
+            <div style={{width:66,height:66,background:`${item.color}18`,border:`1px solid ${item.color}44`,
+                         borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",
+                         flexShrink:0,fontSize:30,boxShadow:isHov?`0 0 20px ${item.color}44`:"none",transition:"box-shadow 0.2s"}}>
+              {item.icon}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:17,fontWeight:"bold",letterSpacing:2,color:isHov?item.color:text,transition:"color 0.2s",marginBottom:4}}>{item.label}</div>
+              <div style={{fontSize:12,color:textDim,letterSpacing:0.5}}>{item.desc}</div>
+            </div>
+            <div style={{fontSize:26,color:isHov?item.color:border,transition:"all 0.2s",transform:isHov?"translateX(3px)":"none"}}>›</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -2104,11 +2621,12 @@ function SelectionScreen({aircraftType,onSelect,onBack,onSettings,settings}){
 // ── APP ────────────────────────────────────────────────────────────────────
 function App(){
   const [settings,setSettings] = useState(loadSettings);
-  const [view,setView] = useState("home"); // home | type | checklist | custom
-  const [showSettings,setShowSettings] = useState(false);
+  const [view,setView] = useState("main");
   const [selectedType,setSelectedType] = useState(null);
   const [selectedAc,setSelectedAc] = useState(null);
-  const [customLists,setCustomLists] = useState([]);
+  const [customLists,setCustomLists] = useState(()=>{
+    try{return JSON.parse(localStorage.getItem(CUSTOM_LISTS_KEY))||[];}catch{return [];}
+  });
 
   const updateSettings = (patch)=>{
     setSettings(prev=>{
@@ -2119,31 +2637,41 @@ function App(){
     });
   };
 
+  const updateCustomLists = (lists)=>{
+    setCustomLists(lists);
+    try{localStorage.setItem(CUSTOM_LISTS_KEY,JSON.stringify(lists));}catch{}
+  };
+
   useEffect(()=>{
     document.body.className = settings.milGreen?"mil-green":settings.whiteMode?"white-mode":"";
   },[settings.milGreen,settings.whiteMode]);
 
   useEffect(()=>{
     if(!("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.getRegistrations().then(regs=>{
-      regs.forEach(reg=>reg.update());
-    });
+    navigator.serviceWorker.getRegistrations().then(regs=>{regs.forEach(reg=>reg.update());});
   },[]);
 
   const goChecklist = (id)=>{ setSelectedAc(id); setView("checklist"); };
-  const selectType = (typeId)=>{
-    setSelectedType(typeId);
-    setView("type");
-  };
+  const selectType = (typeId)=>{ setSelectedType(typeId); setView("type"); };
 
   return (
     <div style={{display:"flex",flexDirection:"column",minHeight:"100vh"}}>
-      {view==="home" && (
-        <HomeScreen
+      {view==="main" && (
+        <MainMenuScreen
           settings={settings}
+          onChecklist={()=>setView("checklist-home")}
+          onWeightBalance={()=>setView("weight-balance")}
+          onAdmin={()=>setView("admin")}
+          onOptions={()=>setView("options")}
+        />
+      )}
+      {view==="checklist-home" && (
+        <ChecklistHomeScreen
+          settings={settings}
+          customLists={customLists}
           onSelect={selectType}
           onCustom={()=>setView("custom")}
-          onSettings={()=>setShowSettings(true)}
+          onBack={()=>setView("main")}
         />
       )}
       {view==="type" && (
@@ -2151,8 +2679,8 @@ function App(){
           aircraftType={selectedType}
           settings={settings}
           onSelect={goChecklist}
-          onBack={()=>setView("home")}
-          onSettings={()=>setShowSettings(true)}
+          onBack={()=>setView("checklist-home")}
+          onSettings={()=>setView("options")}
         />
       )}
       {view==="checklist" && (
@@ -2160,7 +2688,7 @@ function App(){
           aircraftId={selectedAc}
           settings={settings}
           customLists={customLists}
-          onSettings={()=>setShowSettings(true)}
+          onSettings={()=>setView("options")}
           onBack={()=>{
             const isCustom = customLists.some(c=>c.id===selectedAc);
             if(isCustom){ setView("custom"); return; }
@@ -2168,7 +2696,7 @@ function App(){
             const sameType = ac?.aircraftType
               ? Object.values(AIRCRAFT).filter(a=>a.aircraftType===ac.aircraftType)
               : [];
-            if(sameType.length===1) setView("home");
+            if(sameType.length===1) setView("checklist-home");
             else { setSelectedType(ac.aircraftType); setView("type"); }
           }}
         />
@@ -2177,13 +2705,19 @@ function App(){
         <CustomScreen
           settings={settings}
           customLists={customLists}
-          setCustomLists={setCustomLists}
-          onBack={()=>setView("home")}
+          setCustomLists={updateCustomLists}
+          onBack={()=>setView("checklist-home")}
           onSelect={(id)=>{ setSelectedAc(id); setView("checklist"); }}
         />
       )}
-      {showSettings && (
-        <SettingsPanel onClose={()=>setShowSettings(false)} settings={settings} setSettings={updateSettings}/>
+      {view==="weight-balance" && (
+        <WeightBalanceScreen settings={settings} onBack={()=>setView("main")}/>
+      )}
+      {view==="admin" && (
+        <AdminScreen settings={settings} onBack={()=>setView("main")}/>
+      )}
+      {view==="options" && (
+        <OptionsScreen settings={settings} setSettings={updateSettings} onBack={()=>setView("main")}/>
       )}
     </div>
   );
@@ -2194,7 +2728,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=6')
+    navigator.serviceWorker.register('sw.js?v=7')
       .then(function(reg){
         reg.update();
         console.log('SW registered:', reg.scope);
