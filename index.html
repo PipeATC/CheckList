@@ -118,15 +118,22 @@ function saveAcOverride(id,override){
   saveAcData(data);
 }
 
+// Data sourced from the official POHs:
+//  · Cessna 152 — POH §2 (CG limits) + §6 (Loading Arrangements / Loading Graph)
+//    and the Club Aéreo "PESO y BALANCE · CESSNA 152" form.
+//  · Piper PA-28-236 Dakota — POH report VB-910, §2.13 (CG limits) + §6.
+// Envelope points: forward limit varies with weight (straight-line between points);
+// aft limit constant. Points listed top weight → bottom weight.
 const WB_DATA = {
   c152:{
     stations:[
-      {id:"frontSeats",label:"Front Seats / Asientos Delanteros",arm:35.0,max:340},
-      {id:"fuel",label:"Fuel / Combustible (gal)",arm:24.0,max:24.5,isFuel:true,density:6.0},
-      {id:"baggage",label:"Baggage / Equipaje",arm:49.0,max:120},
+      {id:"frontSeats",label:"Pilot & Passenger (Front) / Piloto y Pasajero",arm:39.0,max:340},
+      {id:"fuel",label:"Usable Fuel / Combustible Utilizable (gal)",arm:42.0,max:37.5,isFuel:true,density:6.0},
+      {id:"baggageA1",label:"Baggage Area 1 / Equipaje Área 1",arm:63.0,max:120},
+      {id:"baggageA2",label:"Baggage Area 2 / Equipaje Área 2",arm:76.0,max:40},
     ],
     maxGross:1670,
-    envelope:[{w:1670,fwd:33.0,aft:37.5},{w:1100,fwd:33.0,aft:37.5}]
+    envelope:[{w:1670,fwd:32.65,aft:36.5},{w:1350,fwd:31.0,aft:36.5},{w:1100,fwd:31.0,aft:36.5}]
   },
   c172:{
     stations:[
@@ -136,25 +143,45 @@ const WB_DATA = {
       {id:"baggageA",label:"Baggage A / Equipaje A",arm:95.0,max:120},
     ],
     maxGross:2550,
-    envelope:[{w:2550,fwd:35.0,aft:47.3},{w:1950,fwd:35.0,aft:40.5}]
+    envelope:[{w:2550,fwd:40.5,aft:47.3},{w:1950,fwd:35.0,aft:47.3},{w:1500,fwd:35.0,aft:47.3}]
   },
   pa28:{
+    // Piper PA-28-236 Dakota
     stations:[
-      {id:"frontSeats",label:"Front Seats / Asientos Delanteros",arm:86.4,max:400},
+      {id:"frontSeats",label:"Front Seats / Asientos Delanteros",arm:85.5,max:400},
       {id:"rearSeats",label:"Rear Seats / Asientos Traseros",arm:118.1,max:400},
-      {id:"fuel",label:"Fuel / Combustible (gal)",arm:95.0,max:50,isFuel:true,density:6.0},
+      {id:"fuel",label:"Usable Fuel / Combustible Utilizable (gal)",arm:95.0,max:72,isFuel:true,density:6.0},
       {id:"baggage",label:"Baggage / Equipaje",arm:142.8,max:200},
     ],
-    maxGross:2400,
-    envelope:[{w:2400,fwd:86.7,aft:93.0},{w:1500,fwd:82.0,aft:93.0}]
+    maxGross:3000,
+    envelope:[{w:3000,fwd:88.5,aft:92.0},{w:2500,fwd:82.5,aft:92.0},{w:1900,fwd:79.8,aft:92.0}]
   }
 };
 
+// Per-aircraft Basic Empty Weight (incl. unusable fuel & full oil). These are
+// editable in the calculator; values below are defaults from each aircraft's
+// records. C152 values from the Club Aéreo form ("PLANES BASIC WEIGHT").
 const WB_EMPTY = {
-  "c152-cc-kik":{w:1113,arm:39.0},"c152-cc-kse":{w:1113,arm:39.0},"c152-cc-cny":{w:1113,arm:39.0},
+  "c152-cc-kik":{w:1204.00,arm:31.50},"c152-cc-kse":{w:1178.56,arm:30.77},"c152-cc-cny":{w:1169.79,arm:30.22},
   "c172-cc-psb":{w:1400,arm:41.0},
-  "pa28-cc-kif":{w:1370,arm:87.1},"pa28-cc-kih":{w:1370,arm:87.1},"pa28-cc-kid":{w:1370,arm:87.1},
+  "pa28-cc-kif":{w:1734,arm:87.1},"pa28-cc-kih":{w:1734,arm:87.1},"pa28-cc-kid":{w:1734,arm:87.1},
 };
+
+// Interpolate forward/aft CG limits at a given weight from envelope points.
+function cgLimitsAt(weight, envelope){
+  const pts=[...(envelope||[])].sort((a,b)=>a.w-b.w);
+  if(!pts.length) return {fwd:0,aft:0};
+  if(weight<=pts[0].w) return {fwd:pts[0].fwd,aft:pts[0].aft};
+  if(weight>=pts[pts.length-1].w) return {fwd:pts[pts.length-1].fwd,aft:pts[pts.length-1].aft};
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1];
+    if(weight>=a.w&&weight<=b.w){
+      const t=(weight-a.w)/(b.w-a.w);
+      return {fwd:a.fwd+(b.fwd-a.fwd)*t, aft:a.aft+(b.aft-a.aft)*t};
+    }
+  }
+  return {fwd:pts[0].fwd,aft:pts[0].aft};
+}
 
 function normalizeLang(lang){
   if(lang==="fr") return "es";
@@ -2057,6 +2084,63 @@ function ChecklistHomeScreen({onSelect,onBack,settings}){
 }
 
 // ── WEIGHT & BALANCE ────────────────────────────────────────────────────────
+// CG envelope chart (Center of Gravity Limits). Plots weight (Y) vs CG (X),
+// draws the certified envelope polygon, the max-gross line, and the loaded point.
+function WBEnvelopeChart({envelope,maxGross,cg,totalW,statusColor,inLimits,colors}){
+  const {text,textDim,border,accent,cardBg}=colors;
+  const pts=[...(envelope||[])].sort((a,b)=>a.w-b.w);
+  if(pts.length<2) return null;
+  const W=320,H=270, m={l:46,r:14,t:16,b:38};
+  const pw=W-m.l-m.r, ph=H-m.t-m.b;
+  // domains (with padding)
+  const allCg=pts.flatMap(p=>[p.fwd,p.aft]);
+  let minCG=Math.min(...allCg), maxCG=Math.max(...allCg);
+  const cgPad=(maxCG-minCG)*0.12||1; minCG-=cgPad; maxCG+=cgPad;
+  let minW=pts[0].w, maxW=Math.max(maxGross,pts[pts.length-1].w);
+  const wPad=(maxW-minW)*0.10||50; minW-=wPad; maxW+=wPad;
+  const sx=v=>m.l+( (v-minCG)/(maxCG-minCG) )*pw;
+  const sy=v=>m.t+( 1-(v-minW)/(maxW-minW) )*ph;
+  // envelope polygon: fwd boundary (ascending weight) then aft (descending weight)
+  const fwdPath=pts.map(p=>`${sx(p.fwd)},${sy(p.w)}`);
+  const aftPath=[...pts].reverse().map(p=>`${sx(p.aft)},${sy(p.w)}`);
+  const poly=[...fwdPath,...aftPath].join(" ");
+  // ticks
+  const xticks=[],yticks=[];
+  const nicestep=(range,n)=>{ const raw=range/n; const mag=Math.pow(10,Math.floor(Math.log10(raw))); const r=raw/mag; const s=r>=5?5:r>=2?2:1; return s*mag; };
+  const xs=nicestep(maxCG-minCG,4); for(let v=Math.ceil(minCG/xs)*xs; v<=maxCG; v+=xs) xticks.push(+v.toFixed(2));
+  const ys=nicestep(maxW-minW,5); for(let v=Math.ceil(minW/ys)*ys; v<=maxW; v+=ys) yticks.push(Math.round(v));
+  const ptX=sx(Math.max(minCG,Math.min(maxCG,cg))), ptY=sy(Math.max(minW,Math.min(maxW,totalW)));
+  const showPt=totalW>0;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}}>
+      {/* grid + axes */}
+      {xticks.map(v=>(<g key={"x"+v}>
+        <line x1={sx(v)} y1={m.t} x2={sx(v)} y2={m.t+ph} stroke={border} strokeWidth="0.5" opacity="0.5"/>
+        <text x={sx(v)} y={m.t+ph+13} fill={textDim} fontSize="8" textAnchor="middle">{v}</text>
+      </g>))}
+      {yticks.map(v=>(<g key={"y"+v}>
+        <line x1={m.l} y1={sy(v)} x2={m.l+pw} y2={sy(v)} stroke={border} strokeWidth="0.5" opacity="0.5"/>
+        <text x={m.l-5} y={sy(v)+3} fill={textDim} fontSize="8" textAnchor="end">{v}</text>
+      </g>))}
+      <rect x={m.l} y={m.t} width={pw} height={ph} fill="none" stroke={border} strokeWidth="1"/>
+      {/* envelope */}
+      <polygon points={poly} fill={`${accent}1f`} stroke={accent} strokeWidth="1.6" strokeLinejoin="round"/>
+      {/* max gross line */}
+      <line x1={m.l} y1={sy(maxGross)} x2={m.l+pw} y2={sy(maxGross)} stroke="#FF5252" strokeWidth="1" strokeDasharray="4 3" opacity="0.8"/>
+      <text x={m.l+pw-2} y={sy(maxGross)-3} fill="#FF5252" fontSize="7.5" textAnchor="end">MTOW {maxGross}</text>
+      {/* loaded point */}
+      {showPt&&<g>
+        <line x1={ptX} y1={m.t} x2={ptX} y2={m.t+ph} stroke={statusColor} strokeWidth="0.6" strokeDasharray="2 2" opacity="0.6"/>
+        <line x1={m.l} y1={ptY} x2={m.l+pw} y2={ptY} stroke={statusColor} strokeWidth="0.6" strokeDasharray="2 2" opacity="0.6"/>
+        <circle cx={ptX} cy={ptY} r="5" fill={statusColor} stroke={cardBg} strokeWidth="1.5"/>
+      </g>}
+      {/* axis titles */}
+      <text x={m.l+pw/2} y={H-3} fill={textDim} fontSize="8.5" textAnchor="middle">C.G. ARM (in aft of datum)</text>
+      <text x={11} y={m.t+ph/2} fill={textDim} fontSize="8.5" textAnchor="middle" transform={`rotate(-90 11 ${m.t+ph/2})`}>WEIGHT (lbs)</text>
+    </svg>
+  );
+}
+
 function WBCalculatorScreen({aircraftId,onBack,settings}){
   const ac = AIRCRAFT[aircraftId];
   const _ovr = getAcOverride(aircraftId);
@@ -2072,72 +2156,120 @@ function WBCalculatorScreen({aircraftId,onBack,settings}){
   const textDim = settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
   const accent = ac.color;
   const [vals,setVals] = useState({});
+  const [emptyOverride,setEmptyOverride] = useState({w:"",arm:""});
   const upd = (id,v)=>setVals(p=>({...p,[id]:v}));
-  const emMom = empty.w*empty.arm;
+  const empW = emptyOverride.w!==""?(parseFloat(emptyOverride.w)||0):empty.w;
+  const empArm = emptyOverride.arm!==""?(parseFloat(emptyOverride.arm)||0):empty.arm;
+  const emMom = empW*empArm;
   const totals = wbData.stations.reduce((acc,st)=>{
     const raw=parseFloat(vals[st.id])||0;
     const w=st.isFuel?raw*st.density:raw;
     return {w:acc.w+w,m:acc.m+w*st.arm};
   },{w:0,m:0});
-  const totalW=empty.w+totals.w, totalM=emMom+totals.m, cg=totalW>0?totalM/totalW:0;
+  const totalW=empW+totals.w, totalM=emMom+totals.m, cg=totalW>0?totalM/totalW:0;
   const overW=totalW>wbData.maxGross;
-  const env=wbData.envelope[0];
-  const cgOk=cg>=env.fwd&&cg<=env.aft;
+  const lim=cgLimitsAt(totalW,wbData.envelope);
+  const cgOk=totalW>0&&cg>=lim.fwd&&cg<=lim.aft;
   const sc=overW?"#FF5252":!cgOk?"#FF9800":"#4CAF50";
-  const st=overW?"OVER WEIGHT!":!cgOk?"CG OUT OF RANGE":"WITHIN LIMITS ✓";
+  const stMsg=overW?"OVER WEIGHT! / SOBREPESO":!cgOk?"CG OUT OF RANGE / FUERA DE RANGO":"WITHIN LIMITS ✓ / DENTRO DE LÍMITES";
+  // table styling
+  const th={fontSize:9,letterSpacing:0.5,color:textDim,fontWeight:"bold",padding:"7px 6px",textAlign:"center",borderBottom:`1px solid ${border}`};
+  const thItem={...th,textAlign:"left"};
+  const td={fontSize:11,color:text,padding:"5px 6px",textAlign:"center",borderBottom:`1px solid ${border}`,verticalAlign:"middle"};
+  const tdItem={...td,textAlign:"left"};
+  const cellInp={width:"100%",maxWidth:74,background:settings.whiteMode?"#fff":"#0a0e14",border:`1px solid ${border}`,color:text,padding:"6px 5px",borderRadius:4,fontSize:12,outline:"none",textAlign:"right"};
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
         <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
         <div style={{flex:1}}>
-          <div style={{fontSize:10,letterSpacing:3,color:accent}}>PESO Y BALANCE · W&B</div>
+          <div style={{fontSize:10,letterSpacing:3,color:accent}}>PESO Y BALANCE · WEIGHT &amp; BALANCE</div>
           <div style={{fontSize:16,fontWeight:"bold",color:text}}>{ac.name} <span style={{fontSize:11,color:accent,padding:"2px 6px",background:`${accent}22`,border:`1px solid ${accent}44`,borderRadius:3}}>{ac.registration}</span></div>
         </div>
       </div>
-      <div style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"12px 14px",marginBottom:8}}>
-        <div style={{display:"flex",justifyContent:"space-between"}}>
-          <span style={{fontSize:11,color:textDim,letterSpacing:1}}>EMPTY WEIGHT / PESO BÁSICO</span>
-          <span style={{fontSize:14,fontWeight:"bold",color:accent}}>{empty.w} lbs</span>
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-          <span style={{fontSize:10,color:textDim}}>Arm: {empty.arm} in</span>
-          <span style={{fontSize:10,color:textDim}}>Moment: {emMom.toFixed(1)}</span>
+
+      {/* ── Loading table (mirrors the official W&B form) ── */}
+      <div style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,overflow:"hidden",marginBottom:10}}>
+        <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+          <colgroup>
+            <col style={{width:"42%"}}/><col style={{width:"22%"}}/><col style={{width:"14%"}}/><col style={{width:"22%"}}/>
+          </colgroup>
+          <thead>
+            <tr style={{background:settings.whiteMode?"#1a2535":"#000"}}>
+              <th style={{...thItem,color:"#fff",borderBottom:"none"}}>ITEM</th>
+              <th style={{...th,color:"#fff",borderBottom:"none"}}>WEIGHT<br/><span style={{fontSize:8,fontWeight:"normal"}}>(Lbs)</span></th>
+              <th style={{...th,color:"#fff",borderBottom:"none"}}>ARM<br/><span style={{fontSize:8,fontWeight:"normal"}}>(In)</span></th>
+              <th style={{...th,color:"#fff",borderBottom:"none"}}>MOMENT<br/><span style={{fontSize:8,fontWeight:"normal"}}>(Lb·In)</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Basic Empty Weight — editable */}
+            <tr>
+              <td style={tdItem}>Basic Empty Weight<div style={{fontSize:8,color:textDim}}>Unusable fuel &amp; full oil</div></td>
+              <td style={td}><input type="number" value={emptyOverride.w} placeholder={String(empty.w)} onChange={e=>setEmptyOverride(p=>({...p,w:e.target.value}))} style={cellInp}/></td>
+              <td style={td}><input type="number" value={emptyOverride.arm} placeholder={String(empty.arm)} onChange={e=>setEmptyOverride(p=>({...p,arm:e.target.value}))} style={cellInp}/></td>
+              <td style={{...td,color:textDim}}>{emMom.toFixed(0)}</td>
+            </tr>
+            {/* Stations */}
+            {wbData.stations.map(st=>{
+              const raw=vals[st.id]||""; const parsed=parseFloat(raw)||0;
+              const w=st.isFuel?parsed*st.density:parsed; const m=w*st.arm;
+              const over=st.max&&((st.isFuel?parsed:w)>st.max);
+              return (
+                <tr key={st.id}>
+                  <td style={tdItem}>
+                    {st.label}
+                    <div style={{fontSize:8,color:over?"#FF9800":textDim}}>Max {st.max} {st.isFuel?"gal":"lbs"}</div>
+                  </td>
+                  <td style={td}>
+                    <input type="number" value={raw} onChange={e=>upd(st.id,e.target.value)} placeholder={st.isFuel?"gal":"lbs"} style={cellInp}/>
+                    {st.isFuel&&parsed>0&&<div style={{fontSize:8,color:textDim,marginTop:2}}>{w.toFixed(0)} lbs</div>}
+                  </td>
+                  <td style={{...td,color:textDim}}>{st.arm}</td>
+                  <td style={{...td,color:textDim}}>{m.toFixed(0)}</td>
+                </tr>
+              );
+            })}
+            {/* Total */}
+            <tr style={{background:`${accent}14`}}>
+              <td style={{...tdItem,fontWeight:"bold",color:accent,borderBottom:"none"}}>TOTAL WEIGHT &amp; MOMENT</td>
+              <td style={{...td,fontWeight:"bold",color:overW?"#FF5252":text,borderBottom:"none"}}>{totalW.toFixed(0)}</td>
+              <td style={{...td,borderBottom:"none"}}/>
+              <td style={{...td,fontWeight:"bold",color:text,borderBottom:"none"}}>{totalM.toFixed(0)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderTop:`1px solid ${border}`,fontSize:10,color:textDim}}>
+          <span>Max Take Off Weight: <b style={{color:text}}>{wbData.maxGross} lbs</b></span>
+          <span>C.G. = M/W = <b style={{color:sc}}>{cg.toFixed(2)} in</b></span>
         </div>
       </div>
-      {wbData.stations.map(st=>{
-        const raw=vals[st.id]||""; const parsed=parseFloat(raw)||0;
-        const w=st.isFuel?parsed*st.density:parsed; const m=w*st.arm;
-        return (
-          <div key={st.id} style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"12px 14px",marginBottom:8}}>
-            <div style={{fontSize:11,letterSpacing:1,color:accent,marginBottom:8}}>{st.label}</div>
-            <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <input type="number" value={raw} onChange={e=>upd(st.id,e.target.value)}
-                     placeholder={st.isFuel?"Gallons":"Lbs"}
-                     style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:text,padding:"8px 10px",borderRadius:4,fontSize:14,outline:"none"}}/>
-              <div style={{textAlign:"right",minWidth:90}}>
-                <div style={{fontSize:13,color:text}}>{w.toFixed(1)} lbs</div>
-                <div style={{fontSize:10,color:textDim}}>M: {m.toFixed(1)}</div>
-              </div>
-            </div>
-            <div style={{fontSize:10,color:textDim,marginTop:4}}>Arm: {st.arm} in · Max: {st.max} {st.isFuel?"gal":"lbs"}</div>
-          </div>
-        );
-      })}
-      <div style={{background:`${sc}14`,border:`2px solid ${sc}44`,borderRadius:10,padding:"16px 14px",marginTop:8}}>
-        <div style={{fontSize:10,letterSpacing:3,color:sc,marginBottom:10}}>RESULTADO · RESULT</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
-          {[{l:"PESO TOTAL",v:`${totalW.toFixed(1)} lbs`,s:`Max: ${wbData.maxGross}`},
-            {l:"MOMENTO",v:totalM.toFixed(1),s:"in·lbs"},
-            {l:"C.G.",v:`${cg.toFixed(2)} in`,s:`${env.fwd}–${env.aft} in`}
+
+      {/* ── Status ── */}
+      <div style={{background:`${sc}14`,border:`2px solid ${sc}55`,borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+          {[{l:"PESO · WEIGHT",v:`${totalW.toFixed(0)}`,s:`Max ${wbData.maxGross} lbs`},
+            {l:"C.G.",v:`${cg.toFixed(2)}`,s:`Limits ${lim.fwd.toFixed(1)}–${lim.aft.toFixed(1)} in`},
+            {l:"MOMENT",v:totalM.toFixed(0),s:"lb·in"}
           ].map(({l,v,s})=>(
             <div key={l} style={{textAlign:"center",background:cardBg,borderRadius:6,padding:"8px 4px"}}>
               <div style={{fontSize:9,letterSpacing:1,color:textDim,marginBottom:4}}>{l}</div>
-              <div style={{fontSize:13,fontWeight:"bold",color:text}}>{v}</div>
-              <div style={{fontSize:9,color:textDim}}>{s}</div>
+              <div style={{fontSize:15,fontWeight:"bold",color:text}}>{v}</div>
+              <div style={{fontSize:8,color:textDim}}>{s}</div>
             </div>
           ))}
         </div>
-        <div style={{textAlign:"center",fontSize:14,fontWeight:"bold",letterSpacing:2,color:sc}}>{st}</div>
+        <div style={{textAlign:"center",fontSize:13,fontWeight:"bold",letterSpacing:1.5,color:sc}}>{stMsg}</div>
+      </div>
+
+      {/* ── CG Envelope ── */}
+      <div style={{background:cardBg,border:`1px solid ${border}`,borderRadius:10,padding:"12px 12px 8px"}}>
+        <div style={{fontSize:10,letterSpacing:2,color:accent,marginBottom:6,textAlign:"center"}}>CENTER OF GRAVITY LIMITS · ENVELOPE</div>
+        <WBEnvelopeChart envelope={wbData.envelope} maxGross={wbData.maxGross} cg={cg} totalW={totalW}
+                         statusColor={sc} inLimits={cgOk&&!overW} colors={{text,textDim,border,accent,cardBg}}/>
+        <div style={{fontSize:8.5,color:textDim,textAlign:"center",marginTop:4}}>
+          {totalW>0?<span>Loaded point plotted in <b style={{color:sc}}>{overW?"red (over MTOW)":cgOk?"green (within limits)":"amber (out of range)"}</b></span>:"Enter weights to plot the loaded point"}
+        </div>
       </div>
     </div>
   );
