@@ -2930,10 +2930,6 @@ const SCRATCH_FORMS = {
     en:{title:"CRAFT · IFR CLEARANCE", rows:["C — CLEARED TO","R — ROUTE","A — ALTITUDE","F — FREQUENCY","T — TRANSPONDER"]},
     es:{title:"CRAFT · AUTORIZACIÓN IFR", rows:["C — AUTORIZADO A","R — RUTA","A — ALTITUD","F — FRECUENCIA","T — TRANSPONDER"]},
   },
-  atis: {
-    en:{title:"ATIS", rows:["AIRPORT / INFO","TIME (Z)","WIND","VISIBILITY","SKY / WX","TEMP / DEW","ALTIMETER","APPROACH","RUNWAY(S)","REMARKS"]},
-    es:{title:"ATIS", rows:["AEROPUERTO / INFO","HORA (Z)","VIENTO","VISIBILIDAD","CIELO / MET","TEMP / ROCÍO","ALTÍMETRO","APROXIMACIÓN","PISTA(S)","OBSERVACIONES"]},
-  },
   pirep: {
     en:{title:"PIREP", rows:["/OV  LOCATION","/TM  TIME (Z)","/FL  ALTITUDE","/TP  AIRCRAFT","/SK  SKY","/WX  WEATHER","/TA  TEMP","/WV  WIND","/TB  TURBULENCE","/IC  ICING","/RM  REMARKS"]},
     es:{title:"PIREP", rows:["/OV  UBICACIÓN","/TM  HORA (Z)","/FL  ALTITUD","/TP  AERONAVE","/SK  CIELO","/WX  METEO","/TA  TEMP","/WV  VIENTO","/TB  TURBULENCIA","/IC  ENGELAMIENTO","/RM  OBSERV."]},
@@ -2951,6 +2947,57 @@ const SCRATCH_FORMS = {
     es:{title:"ESPERA (HOLDING)", rows:["FIJO / RADIOAYUDA","RADIAL / RUMBO","DIRECCIÓN","VIRAJES (I / D)","TRAMO (tiempo / dist)","HORA EFC","VELOCIDAD / ALT"]},
   },
 };
+
+// ATIS: boxed-grid form (mirrors ForeFlight's ATIS ScratchPad layout).
+function drawScratchAtis(ctx,w,h,colors,lang){
+  const FONT="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+  const es=lang==="es";
+  const Lbl = es
+    ? {ap:"Aeropuerto / Info:",rwy:"Pistas:",wind:"Viento:",xw:"Viento cruzado:",gust:"Ráfaga:",rwy1:"Pista:",vis:"Visibilidad:",cloud:"Nubes:",temp:"Temp / Rocío:",qnh:"QNH:",rmk:"Observaciones:"}
+    : {ap:"Airport / Info:",rwy:"Runways:",wind:"Wind:",xw:"Crosswind:",gust:"Gust:",rwy1:"Runway:",vis:"Visibility:",cloud:"Cloud:",temp:"Temp / Dew:",qnh:"QNH:",rmk:"Remarks:"};
+
+  const m=Math.max(4,w*0.008);
+  const x0=m,y0=m,x1=w-m,y1=h-m;
+  const W=x1-x0,H=y1-y0;
+  const midX=x0+W*0.5;
+  const rw=[1,1.1,1,1,1.15]; const tot=rw.reduce((a,b)=>a+b,0);
+  const yy=[y0]; rw.forEach(r=>yy.push(yy[yy.length-1]+H*r/tot));
+
+  ctx.save();
+  // Grid: outer frame + row dividers + column dividers (rows 0,2,3).
+  ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4;
+  ctx.strokeRect(x0,y0,W,H);
+  ctx.beginPath();
+  for(let i=1;i<yy.length-1;i++){ ctx.moveTo(x0,yy[i]); ctx.lineTo(x1,yy[i]); }
+  [[0,1],[2,3],[3,4]].forEach(([a,b])=>{ ctx.moveTo(midX,yy[a]); ctx.lineTo(midX,yy[b]); });
+  ctx.stroke();
+
+  // Cell labels (top-left of each cell).
+  const fs=Math.max(11,Math.min(18,w/42));
+  ctx.font=`600 ${fs}px ${FONT}`;
+  ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  ctx.fillStyle=colors.text; ctx.globalAlpha=0.78;
+  const lab=(txt,x,y)=>ctx.fillText(txt,x+fs*0.9,y+fs*1.5);
+  lab(Lbl.ap,x0,yy[0]);   lab(Lbl.rwy,midX,yy[0]);
+  lab(Lbl.wind,x0,yy[1]);
+  lab(Lbl.vis,x0,yy[2]);  lab(Lbl.cloud,midX,yy[2]);
+  lab(Lbl.temp,x0,yy[3]); lab(Lbl.qnh,midX,yy[3]);
+  lab(Lbl.rmk,x0,yy[4]);
+
+  // Wind cell sub-fields on the right (Crosswind / Gust / Runway).
+  const subFs=Math.max(10,fs*0.92);
+  ctx.font=`600 ${subFs}px ${FONT}`;
+  const wTop=yy[1], wH=yy[2]-yy[1], subX=x0+W*0.55;
+  [[Lbl.xw,wTop+wH*0.30],[Lbl.gust,wTop+wH*0.56],[Lbl.rwy1,wTop+wH*0.82]].forEach(([txt,cy])=>{
+    ctx.fillStyle=colors.text; ctx.globalAlpha=0.78;
+    ctx.fillText(txt,subX,cy);
+    const tw=ctx.measureText(txt).width;
+    ctx.globalAlpha=0.5; ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(subX+tw+10,cy+2); ctx.lineTo(x1-fs,cy+2); ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
 
 // Paint the template background into a 2D context.
 // `colors` = scratchColors() palette; `lang` = "en" | "es".
@@ -2974,6 +3021,9 @@ function drawScratchTemplate(ctx,w,h,template,colors,lang){
     for(let y=step;y<h;y+=step){ctx.moveTo(0,y);ctx.lineTo(w,y);}
     ctx.stroke(); ctx.restore(); return;
   }
+
+  // ATIS uses a dedicated boxed-grid layout.
+  if(template==="atis"){ ctx.restore(); drawScratchAtis(ctx,w,h,colors,lang); return; }
 
   // Aviation form templates ------------------------------------------------
   const form=SCRATCH_FORMS[template];
