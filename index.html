@@ -3282,11 +3282,11 @@ function MainMenuScreen({onChecklist,onWeightBalance,onAdmin,onScratchpad,onOpti
   const [hov,setHov]=useState(null);
   const t=uiT(settings);
   const ITEMS=[
-    {id:"checklist",label:t.menuChecklist,desc:t.menuChecklistDesc,icon:"☑",color:"#4FC3F7",action:onChecklist},
     {id:"wb",label:t.menuWB,desc:t.menuWBDesc,icon:"⚖",color:"#66BB6A",action:onWeightBalance},
+    {id:"checklist",label:t.menuChecklist,desc:t.menuChecklistDesc,icon:"☑",color:"#4FC3F7",action:onChecklist},
     {id:"scratch",label:t.menuScratch,desc:t.menuScratchDesc,icon:"✎",color:"#26A69A",action:onScratchpad},
-    {id:"admin",label:t.menuAdmin,desc:t.menuAdminDesc,icon:"🔧",color:"#FF9800",action:onAdmin},
     {id:"options",label:t.menuOptions,desc:t.menuOptionsDesc,icon:"⚙",color:"#AB47BC",action:onOptions},
+    {id:"admin",label:t.menuAdmin,desc:t.menuAdminDesc,icon:"🔧",color:"#FF9800",action:onAdmin},
   ];
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 20px",display:"flex",flexDirection:"column"}}>
