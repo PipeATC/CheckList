@@ -1963,7 +1963,7 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
       <div style={{padding:"16px 16px 10px",borderBottom:`1px solid ${border}`,flexShrink:0}}>
         
         {/* Fila Título e Info */}
-        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16, paddingLeft:44}}>
           <div style={{width:42,height:42,background:`${color}18`,border:`1px solid ${color}44`,
                        borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:24}}>
             {isCustom?<UserLogo size={32} color={color}/>:(ac.icon||"✈")}
@@ -2143,7 +2143,7 @@ function ChecklistHomeScreen({onSelect,onBack,onSettings,settings}){
   customAC.forEach(ac=>{ if(allByType[ac.aircraftType]) allByType[ac.aircraftType].push(ac.id); });
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 100px",display:"flex",flexDirection:"column"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,padding:"0 44px"}}>
         <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:6,color:accent}}>CHECKLIST</div>
       </div>
       <div style={{textAlign:"center",marginBottom:24}}>
@@ -2277,7 +2277,7 @@ function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
   const cellInp={width:"100%",maxWidth:74,background:settings.whiteMode?"#fff":"#0a0e14",border:`1px solid ${border}`,color:text,padding:"6px 5px",borderRadius:4,fontSize:12,outline:"none",textAlign:"right"};
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,paddingLeft:44}}>
         <div style={{flex:1}}>
           <div style={{fontSize:10,letterSpacing:3,color:accent}}>{uiT(settings).wbTitle}</div>
           <div style={{fontSize:16,fontWeight:"bold",color:text}}>{ac.name} <span style={{fontSize:11,color:accent,padding:"2px 6px",background:`${accent}22`,border:`1px solid ${accent}44`,borderRadius:3}}>{ac.registration}</span></div>
@@ -2388,7 +2388,7 @@ function WeightBalanceScreen({onBack,onSettings,settings}){
     const meta=TYPE_META[selType];
     return (
       <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,paddingLeft:44}}>
           <div style={{fontSize:11,letterSpacing:3,color:accent}}>{meta.label.toUpperCase()}</div>
         </div>
         {typeAc.map(([id,ac])=>(
@@ -2408,7 +2408,7 @@ function WeightBalanceScreen({onBack,onSettings,settings}){
   }
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 100px",display:"flex",flexDirection:"column"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,padding:"0 44px"}}>
         <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:5,color:accent}}>{t.wbTitle}</div>
       </div>
       <div style={{textAlign:"center",marginBottom:24}}>
@@ -2681,7 +2681,7 @@ function AdminAcEditor({acId, acBase, onBack, settings, colors}){
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexShrink:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexShrink:0,paddingLeft:44}}>
         <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹</button>
         <div style={{flex:1}}>
           <div style={{fontSize:11,color:accent,letterSpacing:1}}>{acBase.name}</div>
@@ -2743,7 +2743,7 @@ function AircraftEditor({initial,onSave,onCancel,colors}){
   const save=()=>{if(!name.trim()||!reg.trim())return;onSave({...(initial||{}),name:name.trim(),registration:reg.trim().toUpperCase(),aircraftType:type,type:"Single Engine Piston",color,description:desc.trim(),icon:"✈"});};
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,paddingLeft:44}}>
         <button onClick={onCancel} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ CANCELAR</button>
         <div style={{flex:1,fontSize:11,letterSpacing:2,color:accent}}>{initial?"EDITAR":"NUEVA"} AERONAVE</div>
         <button onClick={save} style={{background:`${accent}22`,border:`1px solid ${accent}`,color:accent,padding:"5px 12px",borderRadius:4,cursor:"pointer",fontSize:11}}>GUARDAR</button>
@@ -2848,7 +2848,7 @@ function AdminScreen({onBack,onSettings,settings}){
 
   return (
     <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column"}}>
-      <div style={{padding:"16px 14px 10px",borderBottom:`1px solid ${border}`,flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
+      <div style={{padding:"16px 14px 10px 58px",borderBottom:`1px solid ${border}`,flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
         <div style={{flex:1,fontSize:11,letterSpacing:4,color:accent}}>{t.adminTitle}</div>
         <button onClick={()=>setIsAuth(false)} style={{background:"transparent",border:"none",color:textDim,fontSize:10,cursor:"pointer"}}>SALIR</button>
       </div>
@@ -3527,7 +3527,7 @@ function ScratchpadScreen({settings,onBack,onSettings}){
   return (
     <div style={{minHeight:"100vh",background:c.bg,padding:"16px 16px 100px"}}>
       {/* Header */}
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,minHeight:30}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,minHeight:30,paddingLeft:44}}>
         <button onClick={()=>setEditMode(m=>!m)} disabled={!pads.length}
                 style={{background:"transparent",border:"none",color:pads.length?(editMode?c.accent:c.textDim):"transparent",
                         fontSize:11,fontWeight:"bold",letterSpacing:2,cursor:pads.length?"pointer":"default",width:56,textAlign:"left"}}>
@@ -3540,17 +3540,14 @@ function ScratchpadScreen({settings,onBack,onSettings}){
                         display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
       </div>
 
-      {/* Module hero icon (matches Weight & Balance) */}
-      {!!pads.length && (
-        <div style={{textAlign:"center",marginBottom:24}}>
-          <div style={{fontSize:42,marginBottom:8}}>✎</div>
-        </div>
-      )}
+      {/* Module hero icon (matches Weight & Balance) — always shown */}
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:42,marginBottom:8}}>✎</div>
+      </div>
 
       {/* Empty state */}
       {!pads.length && (
-        <div style={{textAlign:"center",marginTop:80,color:c.textDim}}>
-          <div style={{fontSize:52,marginBottom:14,opacity:0.5}}>✎</div>
+        <div style={{textAlign:"center",marginTop:40,color:c.textDim}}>
           <div style={{fontSize:14,letterSpacing:1,marginBottom:6,color:c.text}}>{t.scratchEmpty}</div>
           <div style={{fontSize:12,letterSpacing:0.5}}>{t.scratchEmptyHint}</div>
         </div>
@@ -3767,7 +3764,7 @@ function SelectionScreen({aircraftType,onSelect,onBack,onSettings,settings}){
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
       {/* Type header */}
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,paddingLeft:44}}>
         <div style={{width:36,height:36,background:`${meta.color}18`,border:`1px solid ${meta.color}44`,
                      borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:20}}>
           {meta.icon}
