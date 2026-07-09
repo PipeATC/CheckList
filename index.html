@@ -83,6 +83,8 @@ const T = {
     menuScratch:"SCRATCHPAD", menuScratchDesc:"Handwritten Notes · Pen, Touch & Mouse",
     menuOptions:"OPTIONS", menuOptionsDesc:"Settings & Preferences",
     menuHome:"MAIN MENU",
+    tplDraw:"DRAW", tplType:"TYPE", tplGrid:"GRID", tplCraft:"CRAFT", tplAtis:"ATIS",
+    tplPirep:"PIREP", tplTakeoff:"TAKEOFF", tplLanding:"LANDING", tplHolding:"HOLDING",
     scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchChooseTemplate:"CHOOSE A TEMPLATE",
     scratchBlank:"BLANK", scratchGrid:"GRID", scratchLines:"LINES",
     scratchEmpty:"No scratchpads yet.", scratchEmptyHint:"Tap + to create your first note.",
@@ -110,6 +112,8 @@ const T = {
     menuScratch:"BLOC DE NOTAS", menuScratchDesc:"Notas a mano · Lápiz, Táctil y Mouse",
     menuOptions:"OPCIONES", menuOptionsDesc:"Ajustes y Preferencias",
     menuHome:"MENÚ PRINCIPAL",
+    tplDraw:"DIBUJO", tplType:"TEXTO", tplGrid:"CUADRÍCULA", tplCraft:"CRAFT", tplAtis:"ATIS",
+    tplPirep:"PIREP", tplTakeoff:"DESPEGUE", tplLanding:"ATERRIZAJE", tplHolding:"ESPERA",
     scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
     scratchBlank:"EN BLANCO", scratchGrid:"CUADRÍCULA", scratchLines:"LÍNEAS",
     scratchEmpty:"Aún no hay notas.", scratchEmptyHint:"Toca + para crear tu primera nota.",
@@ -2920,21 +2924,109 @@ function scratchColors(settings){
   };
 }
 
-// Paint the template background (grid / lines / blank) into a 2D context.
-function drawScratchTemplate(ctx,w,h,template,gridColor){
-  if(template==="blank") return;
+// Aviation form field definitions (EN/ES) painted behind the ink layer.
+const SCRATCH_FORMS = {
+  craft: {
+    en:{title:"CRAFT · IFR CLEARANCE", rows:["C — CLEARED TO","R — ROUTE","A — ALTITUDE","F — FREQUENCY","T — TRANSPONDER"]},
+    es:{title:"CRAFT · AUTORIZACIÓN IFR", rows:["C — AUTORIZADO A","R — RUTA","A — ALTITUD","F — FRECUENCIA","T — TRANSPONDER"]},
+  },
+  atis: {
+    en:{title:"ATIS", rows:["AIRPORT / INFO","TIME (Z)","WIND","VISIBILITY","SKY / WX","TEMP / DEW","ALTIMETER","APPROACH","RUNWAY(S)","REMARKS"]},
+    es:{title:"ATIS", rows:["AEROPUERTO / INFO","HORA (Z)","VIENTO","VISIBILIDAD","CIELO / MET","TEMP / ROCÍO","ALTÍMETRO","APROXIMACIÓN","PISTA(S)","OBSERVACIONES"]},
+  },
+  pirep: {
+    en:{title:"PIREP", rows:["/OV  LOCATION","/TM  TIME (Z)","/FL  ALTITUDE","/TP  AIRCRAFT","/SK  SKY","/WX  WEATHER","/TA  TEMP","/WV  WIND","/TB  TURBULENCE","/IC  ICING","/RM  REMARKS"]},
+    es:{title:"PIREP", rows:["/OV  UBICACIÓN","/TM  HORA (Z)","/FL  ALTITUD","/TP  AERONAVE","/SK  CIELO","/WX  METEO","/TA  TEMP","/WV  VIENTO","/TB  TURBULENCIA","/IC  ENGELAMIENTO","/RM  OBSERV."]},
+  },
+  takeoff: {
+    en:{title:"TAKEOFF / DEPARTURE BRIEF", rows:["RUNWAY","WIND","FLAPS / CONFIG","V-SPEEDS (Vr / Vy)","ABORT / REJECT","INITIAL HDG / ALT","DEPARTURE / SID","EMERGENCY PLAN"]},
+    es:{title:"BRIEFING DESPEGUE / SALIDA", rows:["PISTA","VIENTO","FLAPS / CONFIG.","VELOCIDADES (Vr / Vy)","ABORTAR / RECHAZO","RUMBO / ALT INICIAL","SALIDA / SID","PLAN EMERGENCIA"]},
+  },
+  landing: {
+    en:{title:"LANDING / APPROACH BRIEF", rows:["AIRPORT / RWY","ATIS / WIND","APPROACH","FREQ (TWR / APP)","MINIMUMS (DA / MDA)","MISSED APPROACH","FLAPS / Vref","TAXI / EXIT"]},
+    es:{title:"BRIEFING ATERRIZAJE / APROX.", rows:["AEROPUERTO / PISTA","ATIS / VIENTO","APROXIMACIÓN","FREC (TWR / APP)","MÍNIMOS (DA / MDA)","APROX. FRUSTRADA","FLAPS / Vref","RODAJE / SALIDA"]},
+  },
+  holding: {
+    en:{title:"HOLDING", rows:["FIX / NAVAID","RADIAL / COURSE","DIRECTION","TURNS (L / R)","LEG (time / dist)","EFC TIME","SPEED / ALT"]},
+    es:{title:"ESPERA (HOLDING)", rows:["FIJO / RADIOAYUDA","RADIAL / RUMBO","DIRECCIÓN","VIRAJES (I / D)","TRAMO (tiempo / dist)","HORA EFC","VELOCIDAD / ALT"]},
+  },
+};
+
+// Paint the template background into a 2D context.
+// `colors` = scratchColors() palette; `lang` = "en" | "es".
+function drawScratchTemplate(ctx,w,h,template,colors,lang){
+  const grid=colors.grid, labelCol=colors.textDim, accent=colors.accent;
+  const FONT="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
   ctx.save();
-  ctx.strokeStyle=gridColor; ctx.lineWidth=1;
-  ctx.beginPath();
+
+  // Plain backgrounds ------------------------------------------------------
+  if(template==="blank"||template==="draw"){ ctx.restore(); return; }
   if(template==="grid"){
+    ctx.strokeStyle=grid; ctx.lineWidth=1; ctx.beginPath();
     const step=Math.max(18,w/18);
     for(let x=step;x<w;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,h);}
     for(let y=step;y<h;y+=step){ctx.moveTo(0,y);ctx.lineTo(w,y);}
-  }else if(template==="lines"){
+    ctx.stroke(); ctx.restore(); return;
+  }
+  if(template==="lines"||template==="type"){
+    ctx.strokeStyle=grid; ctx.lineWidth=1; ctx.beginPath();
     const step=Math.max(26,h/16);
     for(let y=step;y<h;y+=step){ctx.moveTo(0,y);ctx.lineTo(w,y);}
+    ctx.stroke(); ctx.restore(); return;
   }
-  ctx.stroke();
+
+  // Aviation form templates ------------------------------------------------
+  const form=SCRATCH_FORMS[template];
+  if(!form){ ctx.restore(); return; }
+  const L=form[lang==="es"?"es":"en"];
+  const rows=L.rows;
+
+  const pad=Math.max(14,w*0.05);
+  const titleFs=Math.min(19,Math.max(12,w/28));
+  ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  ctx.fillStyle=accent; ctx.font=`bold ${titleFs}px ${FONT}`;
+  ctx.fillText(L.title,pad,pad+titleFs);
+  ctx.strokeStyle=accent; ctx.globalAlpha=0.4; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(pad,pad+titleFs+7); ctx.lineTo(w-pad,pad+titleFs+7); ctx.stroke();
+  ctx.globalAlpha=1;
+
+  const top=pad+titleFs+pad*0.9;
+  const diagH = template==="holding" ? Math.min(h*0.34, w*0.5) : 0;
+  const avail=h-top-pad-diagH;
+  const rowH=avail/rows.length;
+  const fs=Math.max(10,Math.min(15,rowH*0.4,w/26));
+  ctx.font=`600 ${fs}px ${FONT}`;
+  rows.forEach((r,i)=>{
+    const y=top+rowH*i+rowH*0.62;
+    ctx.fillStyle=labelCol; ctx.fillText(r,pad,y);
+    const lw=ctx.measureText(r).width;
+    ctx.strokeStyle=grid; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(pad+lw+12,y+3); ctx.lineTo(w-pad,y+3); ctx.stroke();
+  });
+
+  // Holding: racetrack pattern diagram at the bottom.
+  if(template==="holding"){
+    const cy=h-pad-diagH/2, cx=w/2;
+    const rr=diagH*0.32;
+    const legLen=Math.min(w*0.34, diagH*1.1);
+    const leftX=cx-legLen/2, rightX=cx+legLen/2;
+    ctx.strokeStyle=accent; ctx.globalAlpha=0.55; ctx.lineWidth=1.6;
+    ctx.beginPath();
+    ctx.moveTo(leftX,cy-rr); ctx.lineTo(rightX,cy-rr);
+    ctx.moveTo(leftX,cy+rr); ctx.lineTo(rightX,cy+rr);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(rightX,cy,rr,-Math.PI/2,Math.PI/2,false);
+    ctx.arc(leftX,cy,rr,Math.PI/2,-Math.PI/2,false);
+    ctx.stroke();
+    const tsz=Math.max(6,rr*0.5);
+    ctx.fillStyle=accent;
+    ctx.beginPath();
+    ctx.moveTo(leftX,cy-tsz); ctx.lineTo(leftX-tsz*0.9,cy+tsz*0.7); ctx.lineTo(leftX+tsz*0.9,cy+tsz*0.7); ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha=1;
+  }
+
   ctx.restore();
 }
 
@@ -2990,7 +3082,7 @@ function ScratchpadEditor({pad,settings,onSave}){
   const renderBg=()=>{
     const {w,h}=size(); const g=ctxOf(bgRef.current);
     g.clearRect(0,0,w,h); g.fillStyle=c.paper; g.fillRect(0,0,w,h);
-    drawScratchTemplate(g,w,h,pad.template,c.grid);
+    drawScratchTemplate(g,w,h,pad.template,c,uiLang(settings));
   };
   const renderStrokes=()=>{
     const {w,h}=size(); const g=ctxOf(drawRef.current);
@@ -3070,7 +3162,7 @@ function ScratchpadEditor({pad,settings,onSave}){
     const off=document.createElement("canvas"); off.width=tw; off.height=th;
     const g=off.getContext("2d");
     g.fillStyle=c.paper; g.fillRect(0,0,tw,th);
-    drawScratchTemplate(g,tw,th,pad.template,c.grid);
+    drawScratchTemplate(g,tw,th,pad.template,c,uiLang(settings));
     strokesRef.current.forEach(s=>drawScratchStroke(g,s,tw,th));
     try{ return off.toDataURL("image/png"); }catch{ return ""; }
   };
@@ -3183,9 +3275,15 @@ function ScratchpadScreen({settings,onBack,onSettings}){
   if(editing) return <ScratchpadEditor pad={editing} settings={settings} onSave={savePad}/>;
 
   const TEMPLATES=[
-    {id:"blank",label:t.scratchBlank,icon:"▢"},
-    {id:"grid", label:t.scratchGrid, icon:"▦"},
-    {id:"lines",label:t.scratchLines,icon:"≡"},
+    {id:"draw",   label:t.tplDraw,   icon:"✎"},
+    {id:"type",   label:t.tplType,   icon:"T"},
+    {id:"grid",   label:t.tplGrid,   icon:"▦"},
+    {id:"craft",  label:t.tplCraft,  icon:"▣"},
+    {id:"atis",   label:t.tplAtis,   icon:"☁"},
+    {id:"pirep",  label:t.tplPirep,  icon:"✉"},
+    {id:"takeoff",label:t.tplTakeoff,icon:"➚"},
+    {id:"landing",label:t.tplLanding,icon:"➘"},
+    {id:"holding",label:t.tplHolding,icon:"↻"},
   ];
 
   return (
@@ -3250,7 +3348,7 @@ function ScratchpadScreen({settings,onBack,onSettings}){
                      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div onClick={e=>e.stopPropagation()} className="slide-up"
                style={{background:c.cardBg,border:`1px solid ${c.border}`,borderRadius:16,padding:"22px 20px",
-                       width:"100%",maxWidth:360,boxShadow:"0 12px 40px rgba(0,0,0,0.5)"}}>
+                       width:"100%",maxWidth:360,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 12px 40px rgba(0,0,0,0.5)"}}>
             <div style={{textAlign:"center",fontSize:13,letterSpacing:3,color:c.accent,fontWeight:"bold",marginBottom:18}}>{t.scratchChooseTemplate}</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
               {TEMPLATES.map(tp=>(
