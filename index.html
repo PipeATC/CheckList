@@ -69,6 +69,7 @@ const T = {
     phase:"PHASE",done:"✓ DONE",phases:"phases",items:"items",
     settingsTitle:"SETTINGS",settingsDesc:"App preferences and language",
     whiteMode:"White Mode",milGreen:"Military Green",
+    theme:"Theme",darkMode:"Dark Mode",
     autoAdvance:"Auto-advance Phase",floatDone:"Float Completed Items",
     centerText:"Centered Text", largeText:"Large Text",
     lang:"Language",newChecklist:"+ NEW CHECKLIST",editChecklist:"EDIT",
@@ -98,6 +99,7 @@ const T = {
     phase:"FASE",done:"✓ HECHO",phases:"fases",items:"elementos",
     settingsTitle:"AJUSTES",settingsDesc:"Preferencias de la app e idioma",
     whiteMode:"Modo Blanco",milGreen:"Verde Militar",
+    theme:"Tema",darkMode:"Modo Oscuro",
     autoAdvance:"Avance automática de fase",floatDone:"Flotar elementos completados",
     centerText:"Texto Centrado", largeText:"Texto Grande",
     lang:"Idioma",newChecklist:"+ NUEVA LISTA",editChecklist:"EDITAR",
@@ -1408,6 +1410,9 @@ function SettingsPanel({onClose,settings,setSettings}){
 
   const toggle = (k) => setSettings(s=>({...s,[k]:!s[k]}));
   const setLang = (l) => setSettings(s=>({...s,lang:normalizeLang(l)}));
+  const theme = settings.milGreen ? "mil" : settings.whiteMode ? "white" : "dark";
+  const setTheme = (th) => setSettings(s=>({...s,whiteMode:th==="white",milGreen:th==="mil"}));
+  const THEMES = [{id:"white",label:t.whiteMode},{id:"dark",label:t.darkMode},{id:"mil",label:t.milGreen}];
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}
@@ -1435,10 +1440,24 @@ function SettingsPanel({onClose,settings,setSettings}){
           </div>
         </div>
 
+        {/* Theme */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,letterSpacing:3,color:accent,marginBottom:8}}>{t.theme.toUpperCase()}</div>
+          <div style={{display:"flex",gap:8}}>
+            {THEMES.map(th=>(
+              <button key={th.id} onClick={()=>setTheme(th.id)}
+                      style={{flex:1,padding:"10px 4px",background:theme===th.id?accent+"22":"transparent",
+                              border:`1px solid ${theme===th.id?accent:border}`,
+                              color:theme===th.id?accent:text,fontSize:12,cursor:"pointer",borderRadius:4,
+                              letterSpacing:0.5,lineHeight:1.2}}>
+                {th.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Toggles */}
         {[
-          {k:"whiteMode",label:t.whiteMode},
-          {k:"milGreen",label:t.milGreen},
           {k:"autoAdvance",label:t.autoAdvance},
           {k:"floatDone",label:t.floatDone},
           {k:"centerText",label:t.centerText},
@@ -2109,6 +2128,7 @@ function BottomNavBar({onBack,onSettings,settings,children}){
 // ── CHECKLIST HOME (aircraft type selection) ──────────────────────────────
 function ChecklistHomeScreen({onSelect,onBack,onSettings,settings}){
   const [hov,setHov] = useState(null);
+  const t = uiT(settings);
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
   const border = settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
@@ -2125,6 +2145,10 @@ function ChecklistHomeScreen({onSelect,onBack,onSettings,settings}){
     <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 100px",display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
         <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:6,color:accent}}>CHECKLIST</div>
+      </div>
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:42,marginBottom:8}}>☑</div>
+        <div style={{fontSize:12,color:textDim,letterSpacing:2}}>{t.selectAircraft}</div>
       </div>
       {TYPE_ORDER.map(typeId=>{
         const meta = TYPE_META[typeId];
@@ -3515,6 +3539,13 @@ function ScratchpadScreen({settings,onBack,onSettings}){
                         color:c.accent,fontSize:22,lineHeight:1,cursor:"pointer",flexShrink:0,
                         display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
       </div>
+
+      {/* Module hero icon (matches Weight & Balance) */}
+      {!!pads.length && (
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:42,marginBottom:8}}>✎</div>
+        </div>
+      )}
 
       {/* Empty state */}
       {!pads.length && (
