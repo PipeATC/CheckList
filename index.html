@@ -2924,29 +2924,213 @@ function scratchColors(settings){
   };
 }
 
+const SCRATCH_FONT="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+
 // Aviation form field definitions (EN/ES) painted behind the ink layer.
+// (CRAFT, ATIS, TAKEOFF, LANDING, HOLDING have dedicated ForeFlight-style
+//  renderers; only PIREP uses this generic label+line list.)
 const SCRATCH_FORMS = {
-  craft: {
-    en:{title:"CRAFT · IFR CLEARANCE", rows:["C — CLEARED TO","R — ROUTE","A — ALTITUDE","F — FREQUENCY","T — TRANSPONDER"]},
-    es:{title:"CRAFT · AUTORIZACIÓN IFR", rows:["C — AUTORIZADO A","R — RUTA","A — ALTITUD","F — FRECUENCIA","T — TRANSPONDER"]},
-  },
   pirep: {
     en:{title:"PIREP", rows:["/OV  LOCATION","/TM  TIME (Z)","/FL  ALTITUDE","/TP  AIRCRAFT","/SK  SKY","/WX  WEATHER","/TA  TEMP","/WV  WIND","/TB  TURBULENCE","/IC  ICING","/RM  REMARKS"]},
     es:{title:"PIREP", rows:["/OV  UBICACIÓN","/TM  HORA (Z)","/FL  ALTITUD","/TP  AERONAVE","/SK  CIELO","/WX  METEO","/TA  TEMP","/WV  VIENTO","/TB  TURBULENCIA","/IC  ENGELAMIENTO","/RM  OBSERV."]},
   },
-  takeoff: {
-    en:{title:"TAKEOFF / DEPARTURE BRIEF", rows:["RUNWAY","WIND","FLAPS / CONFIG","V-SPEEDS (Vr / Vy)","ABORT / REJECT","INITIAL HDG / ALT","DEPARTURE / SID","EMERGENCY PLAN"]},
-    es:{title:"BRIEFING DESPEGUE / SALIDA", rows:["PISTA","VIENTO","FLAPS / CONFIG.","VELOCIDADES (Vr / Vy)","ABORTAR / RECHAZO","RUMBO / ALT INICIAL","SALIDA / SID","PLAN EMERGENCIA"]},
-  },
-  landing: {
-    en:{title:"LANDING / APPROACH BRIEF", rows:["AIRPORT / RWY","ATIS / WIND","APPROACH","FREQ (TWR / APP)","MINIMUMS (DA / MDA)","MISSED APPROACH","FLAPS / Vref","TAXI / EXIT"]},
-    es:{title:"BRIEFING ATERRIZAJE / APROX.", rows:["AEROPUERTO / PISTA","ATIS / VIENTO","APROXIMACIÓN","FREC (TWR / APP)","MÍNIMOS (DA / MDA)","APROX. FRUSTRADA","FLAPS / Vref","RODAJE / SALIDA"]},
-  },
-  holding: {
-    en:{title:"HOLDING", rows:["FIX / NAVAID","RADIAL / COURSE","DIRECTION","TURNS (L / R)","LEG (time / dist)","EFC TIME","SPEED / ALT"]},
-    es:{title:"ESPERA (HOLDING)", rows:["FIJO / RADIOAYUDA","RADIAL / RUMBO","DIRECCIÓN","VIRAJES (I / D)","TRAMO (tiempo / dist)","HORA EFC","VELOCIDAD / ALT"]},
-  },
 };
+
+// Draw a label with an optional (smaller, lowered) subscript. Returns advance width.
+function drawScratchSub(ctx,x,y,main,sub,fs,color,alpha){
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  ctx.fillStyle=color; ctx.globalAlpha=alpha==null?1:alpha;
+  ctx.font=`600 ${fs}px ${SCRATCH_FONT}`;
+  ctx.fillText(main,x,y);
+  const mw=ctx.measureText(main).width;
+  let total=mw;
+  if(sub){
+    const sfs=Math.round(fs*0.62);
+    ctx.font=`600 ${sfs}px ${SCRATCH_FONT}`;
+    ctx.fillText(sub,x+mw+1,y+fs*0.16);
+    total=mw+1+ctx.measureText(sub).width;
+  }
+  ctx.globalAlpha=1;
+  return total;
+}
+
+// A boxed grid of cells (each cell a {main,sub} label top-left). rowsSpec = array of rows.
+function drawScratchSpeedGrid(ctx,x0,yTop,W,gridH,rowsSpec,colors){
+  const x1=x0+W, nR=rowsSpec.length, rH=gridH/nR;
+  ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4; ctx.globalAlpha=0.9;
+  ctx.strokeRect(x0,yTop,W,gridH);
+  ctx.beginPath();
+  for(let r=1;r<nR;r++){ ctx.moveTo(x0,yTop+rH*r); ctx.lineTo(x1,yTop+rH*r); }
+  ctx.stroke();
+  const fs=Math.max(12,Math.min(20,W/26));
+  rowsSpec.forEach((cells,r)=>{
+    const nC=cells.length, cW=W/nC;
+    ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4; ctx.beginPath();
+    for(let cc=1;cc<nC;cc++){ ctx.moveTo(x0+cW*cc,yTop+rH*r); ctx.lineTo(x0+cW*cc,yTop+rH*(r+1)); }
+    ctx.stroke();
+    cells.forEach((cell,cc)=>{
+      drawScratchSub(ctx,x0+cW*cc+fs*0.5,yTop+rH*r+fs*1.25,cell.main,cell.sub,fs,colors.text,0.85);
+    });
+  });
+  ctx.globalAlpha=1;
+}
+
+// Shared bottom "clearance data" field block for TAKEOFF / LANDING.
+function drawScratchDataBlock(ctx,x0,yTop,W,blockH,colors,lang,rightLbl){
+  const es=lang==="es", x1=x0+W;
+  const Lb= es
+   ? {apt:"APT",elev:"ELEV",rwy:"PISTA",atis:"ATIS",wind:"VIENTO",vis:"VIS",cig:"TECHO",temp:"TEMP/PR",alt:"ALT",rmks:"OBS",len:"LONG PISTA",req:"PISTA REQ",zfw:"ZFW"}
+   : {apt:"APT",elev:"ELEV",rwy:"RWY",atis:"ATIS",wind:"WIND",vis:"VIS",cig:"CIG",temp:"TEMP/DP",alt:"ALT",rmks:"RMKS",len:"RWY LENGTH",req:"RWY REQ'D",zfw:"ZFW"};
+  const rows=6, rowH=blockH/rows;
+  const fs=Math.max(11,Math.min(17,W/34));
+  ctx.font=`600 ${fs}px ${SCRATCH_FONT}`; ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  const yOf=i=>yTop+rowH*(i+0.68);
+  const c3=[x0, x0+W/3, x0+W*2/3];
+  const e3=[x0+W/3-12, x0+W*2/3-12, x1];
+  const field=(label,x,xe,y)=>{
+    ctx.font=`600 ${fs}px ${SCRATCH_FONT}`;
+    ctx.fillStyle=colors.text; ctx.globalAlpha=0.85; ctx.fillText(label,x,y);
+    const lw=ctx.measureText(label).width;
+    ctx.globalAlpha=0.5; ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(x+lw+8,y+3); ctx.lineTo(xe,y+3); ctx.stroke(); ctx.globalAlpha=1;
+  };
+  field(Lb.apt,c3[0],e3[0],yOf(0)); field(Lb.elev,c3[1],e3[1],yOf(0)); field(Lb.rwy,c3[2],e3[2],yOf(0));
+  field(Lb.atis,c3[0],e3[0],yOf(1)); field(Lb.wind,c3[1],e3[1],yOf(1)); field(Lb.vis,c3[2],e3[2],yOf(1));
+  field(Lb.cig,c3[0],e3[0],yOf(2)); field(Lb.temp,c3[1],e3[1],yOf(2)); field(Lb.alt,c3[2],e3[2],yOf(2));
+  field(Lb.rmks,x0,x1,yOf(3));
+  field(Lb.len,x0,x0+W*0.5-12,yOf(4)); field(Lb.req,x0+W*0.5,x1,yOf(4));
+  field(Lb.zfw,x0,x0+W*0.5-12,yOf(5)); field(rightLbl,x0+W*0.5,x1,yOf(5));
+}
+
+// CRAFT: big C R A F T letters down the left margin, open writing space.
+function drawScratchCraft(ctx,w,h,colors){
+  const letters=["C","R","A","F","T"];
+  const m=Math.max(10,h*0.02), top=m, bot=h-m;
+  const rowH=(bot-top)/letters.length;
+  const fs=Math.min(rowH*0.5,w*0.09,74);
+  ctx.save();
+  ctx.fillStyle=colors.text; ctx.globalAlpha=0.9;
+  ctx.font=`bold ${fs}px ${SCRATCH_FONT}`;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  const cx=Math.max(fs*0.9,w*0.05);
+  letters.forEach((L,i)=>ctx.fillText(L,cx,top+rowH*(i+0.5)));
+  // faint separator baselines to guide handwriting
+  ctx.globalAlpha=0.35; ctx.strokeStyle=colors.grid; ctx.lineWidth=1;
+  ctx.beginPath();
+  for(let i=1;i<letters.length;i++){ ctx.moveTo(cx+fs*0.8,top+rowH*i); ctx.lineTo(w-m,top+rowH*i); }
+  ctx.stroke();
+  ctx.globalAlpha=1; ctx.restore();
+}
+
+// HOLDING CLEARANCE: field lines up top, open space below for a hand-drawn pattern.
+function drawScratchHolding(ctx,w,h,colors,lang){
+  const es=lang==="es";
+  const T= es
+    ? {title:"AUTORIZACIÓN DE ESPERA",hold:"ESPERAR",of:"DE",rad:"RAD/RUMBO",turns:"VIRAJES:",right:"DER",left:"IZQ",alt:"ALTITUD",efc:"EFC (HORA)"}
+    : {title:"HOLDING CLEARANCE",hold:"HOLD",of:"OF",rad:"RAD/CRS",turns:"TURNS:",right:"RIGHT",left:"LEFT",alt:"ALTITUDE",efc:"EXPECT FURTHER CLRNC"};
+  const m=Math.max(14,w*0.04), x0=m, x1=w-m, W=x1-x0;
+  ctx.save();
+  const titleFs=Math.max(14,Math.min(24,w/32));
+  ctx.fillStyle=colors.text; ctx.globalAlpha=0.9; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
+  ctx.font=`600 ${titleFs}px ${SCRATCH_FONT}`;
+  ctx.fillText(T.title,w/2,m+titleFs); ctx.globalAlpha=1;
+
+  const fs=Math.max(13,Math.min(21,w/38));
+  ctx.font=`600 ${fs}px ${SCRATCH_FONT}`; ctx.textAlign="left";
+  const fTop=m+titleFs*2.1, fBot=h*0.52, rowH=(fBot-fTop)/4;
+  const yOf=i=>fTop+rowH*(i+0.55);
+  const txt=(s,x,y)=>{ ctx.fillStyle=colors.text; ctx.globalAlpha=0.85; ctx.font=`600 ${fs}px ${SCRATCH_FONT}`; ctx.fillText(s,x,y); ctx.globalAlpha=1; return ctx.measureText(s).width; };
+  const line=(xa,xb,y)=>{ ctx.globalAlpha=0.5; ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(xa,y+3); ctx.lineTo(xb,y+3); ctx.stroke(); ctx.globalAlpha=1; };
+
+  // Row 0: HOLD ___ OF ___
+  let y=yOf(0);
+  let lw=txt(T.hold,x0,y); const ofX=x0+W*0.5;
+  line(x0+lw+10,ofX-W*0.06,y);
+  lw=txt(T.of,ofX,y);
+  line(ofX+lw+10,x1,y);
+  // Row 1: RAD/CRS ___   TURNS: RIGHT / LEFT
+  y=yOf(1);
+  lw=txt(T.rad,x0,y);
+  line(x0+lw+10,x0+W*0.44,y);
+  let tx=x0+W*0.52; lw=txt(T.turns,tx,y); tx+=lw+14;
+  lw=txt(T.right,tx,y); tx+=lw+10;
+  lw=txt("/",tx,y); tx+=lw+10;
+  txt(T.left,tx,y);
+  // Row 2: ALTITUDE ___
+  y=yOf(2);
+  lw=txt(T.alt,x0,y); line(x0+lw+10,x1,y);
+  // Row 3: EXPECT FURTHER CLRNC ___
+  y=yOf(3);
+  lw=txt(T.efc,x0,y); line(x0+lw+10,x1,y);
+  ctx.restore();
+}
+
+// TAKEOFF DATA: speed grid, clearance area, data block, emergency-return section.
+function drawScratchTakeoff(ctx,w,h,colors,lang){
+  const es=lang==="es";
+  const T= es? {title:"DATOS DE DESPEGUE",clr:"AUTORIZACIÓN",emer:"REGRESO EMERGENCIA",wgt:"PESO DESP",flaps:"FLAPS"}
+             : {title:"TAKEOFF DATA",clr:"CLEARANCE",emer:"EMERGENCY RETURN",wgt:"T/O WGT",flaps:"FLAPS"};
+  const m=Math.max(8,w*0.014), x0=m, x1=w-m, W=x1-x0;
+  ctx.save(); ctx.textBaseline="alphabetic";
+  const titleFs=Math.max(15,Math.min(26,w/34));
+  ctx.fillStyle=colors.text; ctx.globalAlpha=0.9; ctx.textAlign="center"; ctx.font=`600 ${titleFs}px ${SCRATCH_FONT}`;
+  ctx.fillText(T.title,w/2,m+titleFs); ctx.globalAlpha=1;
+  let y=m+titleFs*1.5;
+  const gridH=h*0.235;
+  drawScratchSpeedGrid(ctx,x0,y,W,gridH,[
+    [{main:"T/O N",sub:"1"},{main:"CLB N",sub:"1"}],
+    [{main:"V",sub:"1"},{main:"V",sub:"R"},{main:"V",sub:"2"}],
+    [{main:"V",sub:"FR"},{main:"V",sub:"ENR"},{main:T.flaps,sub:""}],
+  ],colors);
+  y+=gridH+m*1.4;
+  const secFs=Math.max(13,Math.min(20,w/40));
+  ctx.textAlign="left"; ctx.fillStyle=colors.text; ctx.globalAlpha=0.85; ctx.font=`600 ${secFs}px ${SCRATCH_FONT}`;
+  ctx.fillText(T.clr,x0,y+secFs); ctx.globalAlpha=1;
+  // Bottom-pinned sections.
+  const emerH=h*0.115, blockH=h*0.235;
+  const emerTop=h-m-emerH, blockTop=emerTop-m-blockH;
+  drawScratchDataBlock(ctx,x0,blockTop,W,blockH,colors,lang,T.wgt);
+  // Divider + emergency return.
+  ctx.globalAlpha=0.7; ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(x0,emerTop-m*0.5); ctx.lineTo(x1,emerTop-m*0.5); ctx.stroke(); ctx.globalAlpha=1;
+  ctx.textAlign="center"; ctx.fillStyle=colors.text; ctx.globalAlpha=0.9; ctx.font=`600 ${secFs}px ${SCRATCH_FONT}`;
+  ctx.fillText(T.emer,w/2,emerTop+secFs); ctx.globalAlpha=1;
+  const efs=Math.max(11,Math.min(17,w/40));
+  const ey=emerTop+emerH*0.9;
+  const c3=[x0, x0+W/3, x0+W*2/3], e3=[x0+W/3-12, x0+W*2/3-12, x1];
+  const subField=(main,sub,x,xe,yy)=>{
+    const lw=drawScratchSub(ctx,x,yy,main,sub,efs,colors.text,0.85);
+    ctx.globalAlpha=0.5; ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(x+lw+8,yy+3); ctx.lineTo(xe,yy+3); ctx.stroke(); ctx.globalAlpha=1;
+  };
+  subField("V","REF",c3[0],e3[0],ey); subField("V","APP",c3[1],e3[1],ey); subField("MSA","",c3[2],e3[2],ey);
+  ctx.restore();
+}
+
+// LANDING DATA: speed grid, clearance area, data block.
+function drawScratchLanding(ctx,w,h,colors,lang){
+  const es=lang==="es";
+  const T= es? {title:"DATOS DE ATERRIZAJE",clr:"AUTORIZACIÓN",wgt:"PESO ATER",req:"PISTA REQ"}
+             : {title:"LANDING DATA",clr:"CLEARANCE",wgt:"LDG WGT",req:"RWY REQ'D"};
+  const m=Math.max(8,w*0.014), x0=m, x1=w-m, W=x1-x0;
+  ctx.save(); ctx.textBaseline="alphabetic";
+  const titleFs=Math.max(15,Math.min(26,w/34));
+  ctx.fillStyle=colors.text; ctx.globalAlpha=0.9; ctx.textAlign="center"; ctx.font=`600 ${titleFs}px ${SCRATCH_FONT}`;
+  ctx.fillText(T.title,w/2,m+titleFs); ctx.globalAlpha=1;
+  let y=m+titleFs*1.5;
+  const gridH=h*0.16;
+  drawScratchSpeedGrid(ctx,x0,y,W,gridH,[
+    [{main:"V",sub:"REF"},{main:"V",sub:"APP"}],
+    [{main:"GA N",sub:"1"},{main:T.req,sub:""}],
+  ],colors);
+  y+=gridH+m*1.4;
+  const secFs=Math.max(13,Math.min(20,w/40));
+  ctx.textAlign="left"; ctx.fillStyle=colors.text; ctx.globalAlpha=0.85; ctx.font=`600 ${secFs}px ${SCRATCH_FONT}`;
+  ctx.fillText(T.clr,x0,y+secFs); ctx.globalAlpha=1;
+  const blockH=h*0.26, blockTop=h-m-blockH;
+  drawScratchDataBlock(ctx,x0,blockTop,W,blockH,colors,lang,T.wgt);
+  ctx.restore();
+}
 
 // ATIS: boxed-grid form (mirrors ForeFlight's ATIS ScratchPad layout).
 function drawScratchAtis(ctx,w,h,colors,lang){
@@ -3022,8 +3206,12 @@ function drawScratchTemplate(ctx,w,h,template,colors,lang){
     ctx.stroke(); ctx.restore(); return;
   }
 
-  // ATIS uses a dedicated boxed-grid layout.
-  if(template==="atis"){ ctx.restore(); drawScratchAtis(ctx,w,h,colors,lang); return; }
+  // Dedicated ForeFlight-style layouts.
+  if(template==="atis"){    ctx.restore(); drawScratchAtis(ctx,w,h,colors,lang);    return; }
+  if(template==="craft"){   ctx.restore(); drawScratchCraft(ctx,w,h,colors);       return; }
+  if(template==="holding"){ ctx.restore(); drawScratchHolding(ctx,w,h,colors,lang); return; }
+  if(template==="takeoff"){ ctx.restore(); drawScratchTakeoff(ctx,w,h,colors,lang); return; }
+  if(template==="landing"){ ctx.restore(); drawScratchLanding(ctx,w,h,colors,lang); return; }
 
   // Aviation form templates ------------------------------------------------
   const form=SCRATCH_FORMS[template];
@@ -3041,8 +3229,7 @@ function drawScratchTemplate(ctx,w,h,template,colors,lang){
   ctx.globalAlpha=1;
 
   const top=pad+titleFs+pad*0.9;
-  const diagH = template==="holding" ? Math.min(h*0.34, w*0.5) : 0;
-  const avail=h-top-pad-diagH;
+  const avail=h-top-pad;
   const rowH=avail/rows.length;
   const fs=Math.max(10,Math.min(15,rowH*0.4,w/26));
   ctx.font=`600 ${fs}px ${FONT}`;
@@ -3053,29 +3240,6 @@ function drawScratchTemplate(ctx,w,h,template,colors,lang){
     ctx.strokeStyle=grid; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(pad+lw+12,y+3); ctx.lineTo(w-pad,y+3); ctx.stroke();
   });
-
-  // Holding: racetrack pattern diagram at the bottom.
-  if(template==="holding"){
-    const cy=h-pad-diagH/2, cx=w/2;
-    const rr=diagH*0.32;
-    const legLen=Math.min(w*0.34, diagH*1.1);
-    const leftX=cx-legLen/2, rightX=cx+legLen/2;
-    ctx.strokeStyle=accent; ctx.globalAlpha=0.55; ctx.lineWidth=1.6;
-    ctx.beginPath();
-    ctx.moveTo(leftX,cy-rr); ctx.lineTo(rightX,cy-rr);
-    ctx.moveTo(leftX,cy+rr); ctx.lineTo(rightX,cy+rr);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(rightX,cy,rr,-Math.PI/2,Math.PI/2,false);
-    ctx.arc(leftX,cy,rr,Math.PI/2,-Math.PI/2,false);
-    ctx.stroke();
-    const tsz=Math.max(6,rr*0.5);
-    ctx.fillStyle=accent;
-    ctx.beginPath();
-    ctx.moveTo(leftX,cy-tsz); ctx.lineTo(leftX-tsz*0.9,cy+tsz*0.7); ctx.lineTo(leftX+tsz*0.9,cy+tsz*0.7); ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha=1;
-  }
 
   ctx.restore();
 }
