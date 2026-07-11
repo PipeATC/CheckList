@@ -3290,6 +3290,23 @@ function drawScratchStroke(ctx,s,w,h){
   ctx.globalCompositeOperation="source-over";
 }
 
+// Shortest distance (in pixels) from point (px,py) to a stroke's polyline.
+// Points are stored normalised 0..1, so we scale by the surface size first.
+function distPointToStrokePx(px,py,s,w,h){
+  const p=s.p; if(!p||!p.length) return Infinity;
+  if(p.length===1){ return Math.hypot(px-p[0][0]*w, py-p[0][1]*h); }
+  let best=Infinity;
+  for(let i=1;i<p.length;i++){
+    const ax=p[i-1][0]*w, ay=p[i-1][1]*h, bx=p[i][0]*w, by=p[i][1]*h;
+    const dx=bx-ax, dy=by-ay, len=dx*dx+dy*dy;
+    let t = len ? ((px-ax)*dx+(py-ay)*dy)/len : 0;
+    t = t<0?0:t>1?1:t;
+    const d=Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+    if(d<best) best=d;
+  }
+  return best;
+}
+
 function fmtScratchDate(ts){
   try{ const d=new Date(ts); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
   catch{ return ""; }
@@ -3313,8 +3330,12 @@ function ScratchpadEditor({pad,settings,onSave}){
 
   const wrapRef=useRef(null), bgRef=useRef(null), drawRef=useRef(null);
   const strokesRef=useRef((pad.strokes||[]).map(s=>({...s,p:s.p.slice()})));
+  // Undo/redo track operations (add-stroke or erase-strokes) so the object
+  // eraser — which removes whole strokes at once — stays fully reversible.
+  const undoRef=useRef([]);
   const redoRef=useRef([]);
   const curRef=useRef(null);
+  const eraseRef=useRef(null);   // strokes removed during the current erase gesture
   const ptrRef=useRef(null);
   const dprRef=useRef(1);
 
@@ -3364,43 +3385,83 @@ function ScratchpadEditor({pad,settings,onSave}){
     return [ (e.clientX-r.left)/r.width, (e.clientY-r.top)/r.height ];
   };
 
+  // Object eraser: remove every stored stroke the eraser tip touches, whole.
+  const eraseAt=(e)=>{
+    const {w,h}=size();
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    let hit=false;
+    evs.forEach(ev=>{
+      const [nx,ny]=nrm(ev); const px=nx*w, py=ny*h;
+      const radius=Math.max(14, toolRef.current.width*3);   // eraser reach in px
+      for(let i=strokesRef.current.length-1;i>=0;i--){
+        const s=strokesRef.current[i];
+        if(distPointToStrokePx(px,py,s,w,h) <= radius + (s.w||2)/2){
+          eraseRef.current.push({idx:i, stroke:s});
+          strokesRef.current.splice(i,1);
+          hit=true;
+        }
+      }
+    });
+    if(hit) renderStrokes();
+  };
+
   const onDown=(e)=>{
     const tool=toolRef.current;
     if(tool.penOnly && e.pointerType==="touch") return;   // palm / finger rejection
     if(ptrRef.current!==null) return;                     // one pointer at a time
     ptrRef.current=e.pointerId;
     try{ drawRef.current.setPointerCapture(e.pointerId); }catch{}
-    const s={ c:tool.color, w:tool.width, e:tool.erase, p:[nrm(e)] };
+    if(tool.erase){ eraseRef.current=[]; eraseAt(e); e.preventDefault(); return; }
+    const s={ c:tool.color, w:tool.width, e:false, p:[nrm(e)] };
     curRef.current=s; redoRef.current=[];
     const {w,h}=size(); drawScratchStroke(ctxOf(drawRef.current),s,w,h);
     e.preventDefault();
   };
   const onMove=(e)=>{
     if(e.pointerId!==ptrRef.current) return;
+    if(eraseRef.current){ eraseAt(e); e.preventDefault(); return; }
     const s=curRef.current; if(!s) return;
     const {w,h}=size(); const g=ctxOf(drawRef.current);
     g.lineJoin="round"; g.lineCap="round"; g.lineWidth=s.w;
-    if(s.e){ g.globalCompositeOperation="destination-out"; g.strokeStyle="rgba(0,0,0,1)"; }
-    else   { g.globalCompositeOperation="source-over";     g.strokeStyle=s.c; }
+    g.globalCompositeOperation="source-over"; g.strokeStyle=s.c;
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     evs.forEach(ev=>{
       const n=nrm(ev); const last=s.p[s.p.length-1];
       g.beginPath(); g.moveTo(last[0]*w,last[1]*h); g.lineTo(n[0]*w,n[1]*h); g.stroke();
       s.p.push(n);
     });
-    g.globalCompositeOperation="source-over";
     e.preventDefault();
   };
   const onUp=(e)=>{
     if(e.pointerId!==ptrRef.current) return;
     try{ drawRef.current.releasePointerCapture(e.pointerId); }catch{}
     ptrRef.current=null;
-    if(curRef.current){ strokesRef.current.push(curRef.current); curRef.current=null; rerender(); }
+    if(eraseRef.current){
+      if(eraseRef.current.length){ undoRef.current.push({type:"erase",removed:eraseRef.current}); redoRef.current=[]; rerender(); }
+      eraseRef.current=null; return;
+    }
+    if(curRef.current){ strokesRef.current.push(curRef.current); undoRef.current.push({type:"add"}); curRef.current=null; rerender(); }
   };
 
-  const undo=()=>{ if(!strokesRef.current.length) return; redoRef.current.push(strokesRef.current.pop()); renderStrokes(); rerender(); };
-  const redo=()=>{ if(!redoRef.current.length) return; strokesRef.current.push(redoRef.current.pop()); renderStrokes(); rerender(); };
-  const clearAll=()=>{ if(!strokesRef.current.length) return; if(!confirm(t.scratchClearConfirm)) return; redoRef.current=[]; strokesRef.current=[]; renderStrokes(); rerender(); };
+  const undo=()=>{
+    const op=undoRef.current.pop(); if(!op) return;
+    if(op.type==="add"){ const s=strokesRef.current.pop(); redoRef.current.push({type:"add",stroke:s}); }
+    else{ // erase: put the removed strokes back where they were
+      for(let i=0;i<op.removed.length;i++){ const r=op.removed[i]; strokesRef.current.splice(Math.min(r.idx,strokesRef.current.length),0,r.stroke); }
+      redoRef.current.push(op);
+    }
+    renderStrokes(); rerender();
+  };
+  const redo=()=>{
+    const op=redoRef.current.pop(); if(!op) return;
+    if(op.type==="add"){ strokesRef.current.push(op.stroke); undoRef.current.push({type:"add"}); }
+    else{ // re-remove the strokes (highest index first keeps indices valid)
+      op.removed.slice().sort((a,b)=>b.idx-a.idx).forEach(r=>{ const j=strokesRef.current.indexOf(r.stroke); if(j>=0) strokesRef.current.splice(j,1); });
+      undoRef.current.push(op);
+    }
+    renderStrokes(); rerender();
+  };
+  const clearAll=()=>{ if(!strokesRef.current.length) return; if(!confirm(t.scratchClearConfirm)) return; undoRef.current=[]; redoRef.current=[]; strokesRef.current=[]; renderStrokes(); rerender(); };
 
   const makeThumb=()=>{
     if(!strokesRef.current.length) return "";
@@ -3432,7 +3493,8 @@ function ScratchpadEditor({pad,settings,onSave}){
   const barBg=settings.whiteMode?"rgba(240,244,248,0.96)":settings.milGreen?"rgba(13,18,8,0.96)":"rgba(10,14,20,0.96)";
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:200,background:c.bg,display:"flex",flexDirection:"column"}}>
+    <div style={{position:"fixed",inset:0,zIndex:200,background:c.bg,display:"flex",flexDirection:"column",
+                 userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none"}}>
       {/* Top bar: back(save) · title · undo/redo/clear */}
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",
                    paddingTop:"calc(10px + env(safe-area-inset-top,0px))",
@@ -3441,9 +3503,10 @@ function ScratchpadEditor({pad,settings,onSave}){
         <button onClick={commit} style={{...btn(false),padding:"8px 12px"}}>‹ {t.back.replace('‹ ','')}</button>
         <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={t.scratchNoteTitle}
                style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",
+                       userSelect:"text",WebkitUserSelect:"text",
                        color:c.text,fontSize:15,fontWeight:"bold",letterSpacing:1,textAlign:"center"}}/>
-        <button onClick={undo} disabled={!strokesRef.current.length} title="Undo"
-                style={{...btn(false),opacity:strokesRef.current.length?1:0.35}}>↶</button>
+        <button onClick={undo} disabled={!undoRef.current.length} title="Undo"
+                style={{...btn(false),opacity:undoRef.current.length?1:0.35}}>↶</button>
         <button onClick={redo} disabled={!redoRef.current.length} title="Redo"
                 style={{...btn(false),opacity:redoRef.current.length?1:0.35}}>↷</button>
         <button onClick={clearAll} style={{...btn(false),color:strokesRef.current.length?"#E57373":c.textDim,
@@ -3456,7 +3519,9 @@ function ScratchpadEditor({pad,settings,onSave}){
         <canvas ref={drawRef}
                 onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
                 onPointerCancel={onUp} onPointerLeave={onUp}
-                style={{position:"absolute",inset:0,touchAction:"none",cursor:"crosshair"}}/>
+                onContextMenu={e=>e.preventDefault()}
+                style={{position:"absolute",inset:0,touchAction:"none",cursor:"crosshair",
+                        userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none"}}/>
       </div>
 
       {/* Tool bar: colours · widths · pen-only · eraser */}
