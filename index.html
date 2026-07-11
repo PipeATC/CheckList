@@ -89,7 +89,7 @@ const T = {
     scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchChooseTemplate:"CHOOSE A TEMPLATE",
     scratchBlank:"BLANK", scratchGrid:"GRID", scratchLines:"LINES",
     scratchEmpty:"No scratchpads yet.", scratchEmptyHint:"Tap + to create your first note.",
-    scratchClearConfirm:"Clear this scratchpad?", scratchDeleteConfirm:"Delete this scratchpad?",
+    scratchClearConfirm:"Clear this scratchpad?", scratchDeleteConfirm:"Delete this scratchpad?", scratchYesDelete:"YES, DELETE",
     scratchUntitled:"Untitled", scratchPenOnly:"PEN ONLY", scratchNoteTitle:"Note title…", scratchEraser:"ERASER",
     edit:"EDIT", done2:"DONE",
     wbTitle:"WEIGHT & BALANCE", selectAircraft:"SELECT AIRCRAFT", adminTitle:"ADMINISTRATION"
@@ -119,7 +119,7 @@ const T = {
     scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
     scratchBlank:"EN BLANCO", scratchGrid:"CUADRÍCULA", scratchLines:"LÍNEAS",
     scratchEmpty:"Aún no hay notas.", scratchEmptyHint:"Toca + para crear tu primera nota.",
-    scratchClearConfirm:"¿Borrar el contenido de esta nota?", scratchDeleteConfirm:"¿Eliminar esta nota?",
+    scratchClearConfirm:"¿Borrar el contenido de esta nota?", scratchDeleteConfirm:"¿Eliminar esta nota?", scratchYesDelete:"SÍ, ELIMINAR",
     scratchUntitled:"Sin título", scratchPenOnly:"SOLO LÁPIZ", scratchNoteTitle:"Título de la nota…", scratchEraser:"BORRADOR",
     edit:"EDITAR", done2:"LISTO",
     wbTitle:"PESO Y BALANCE", selectAircraft:"SELECCIONA AERONAVE", adminTitle:"ADMINISTRACIÓN"
@@ -3566,6 +3566,7 @@ function ScratchpadScreen({settings,onBack,onSettings}){
   const [editing,setEditing]=useState(null);
   const [chooser,setChooser]=useState(false);
   const [editMode,setEditMode]=useState(false);
+  const [pendingDelete,setPendingDelete]=useState(null);   // id awaiting delete confirmation
 
   const persist=(list)=>{ setPads(list); saveScratchpads(list); };
   const newPad=(template)=>{
@@ -3581,7 +3582,8 @@ function ScratchpadScreen({settings,onBack,onSettings}){
     persist(exists ? pads.map(x=>x.id===rest.id?rest:x) : [rest,...pads]);
     setEditing(null);
   };
-  const deletePad=(id)=>{ if(!confirm(t.scratchDeleteConfirm)) return; persist(pads.filter(x=>x.id!==id)); };
+  const deletePad=(id)=>setPendingDelete(id);   // open styled confirmation (see modal below)
+  const confirmDelete=()=>{ persist(pads.filter(x=>x.id!==pendingDelete)); setPendingDelete(null); };
 
   if(editing) return <ScratchpadEditor pad={editing} settings={settings} onSave={savePad}/>;
 
@@ -3677,6 +3679,19 @@ function ScratchpadScreen({settings,onBack,onSettings}){
                   <span style={{fontSize:10,fontWeight:"bold",letterSpacing:1,color:c.text}}>{tp.label}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation (matches the checklist RESET dialog) */}
+      {pendingDelete!==null && (
+        <div style={{position:"fixed",inset:0,zIndex:600,background:"#0009",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:c.cardBg,border:`1px solid ${c.border}`,borderRadius:10,padding:24,maxWidth:300,width:"100%",textAlign:"center"}}>
+            <div style={{fontSize:14,fontWeight:"bold",color:c.text,marginBottom:20,letterSpacing:0.5}}>{t.scratchDeleteConfirm}</div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setPendingDelete(null)} style={{flex:1,padding:"12px 0",background:"transparent",border:`1px solid ${c.border}`,color:c.textDim,cursor:"pointer",borderRadius:6,fontSize:12,fontWeight:"bold",letterSpacing:1}}>{t.cancel}</button>
+              <button onClick={confirmDelete} style={{flex:1,padding:"12px 0",background:"#FF525214",border:"1px solid #FF5252",color:"#FF5252",cursor:"pointer",borderRadius:6,fontSize:12,fontWeight:"bold",letterSpacing:1}}>{t.scratchYesDelete}</button>
             </div>
           </div>
         </div>
