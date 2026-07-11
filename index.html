@@ -84,7 +84,7 @@ const T = {
     menuScratch:"SCRATCHPAD", menuScratchDesc:"Handwritten Notes · Pen, Touch & Mouse",
     menuOptions:"OPTIONS", menuOptionsDesc:"Settings & Preferences",
     menuHome:"MAIN MENU",
-    tplDraw:"DRAW", tplLines:"LINES", tplGrid:"GRID", tplCraft:"CRAFT", tplAtis:"ATIS",
+    tplDraw:"DRAW", tplLines:"LINES", tplGrid:"GRID", tplLocal:"LOCAL", tplCraft:"CRAFT", tplAtis:"ATIS",
     tplPirep:"PIREP", tplTakeoff:"TAKEOFF", tplLanding:"LANDING", tplHolding:"HOLDING",
     scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchNewShort:"NEW", scratchChooseTemplate:"CHOOSE A TEMPLATE",
     scratchBlank:"BLANK", scratchGrid:"GRID", scratchLines:"LINES",
@@ -114,7 +114,7 @@ const T = {
     menuScratch:"BLOC DE NOTAS", menuScratchDesc:"Notas a mano · Lápiz, Táctil y Mouse",
     menuOptions:"OPCIONES", menuOptionsDesc:"Ajustes y Preferencias",
     menuHome:"MENÚ PRINCIPAL",
-    tplDraw:"DIBUJO", tplLines:"LÍNEAS", tplGrid:"CUADRÍCULA", tplCraft:"CRAFT", tplAtis:"ATIS",
+    tplDraw:"DIBUJO", tplLines:"LÍNEAS", tplGrid:"CUADRÍCULA", tplLocal:"VUELO LOCAL", tplCraft:"CRAFT", tplAtis:"ATIS",
     tplPirep:"PIREP", tplTakeoff:"DESPEGUE", tplLanding:"ATERRIZAJE", tplHolding:"ESPERA",
     scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchNewShort:"NUEVA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
     scratchBlank:"EN BLANCO", scratchGrid:"CUADRÍCULA", scratchLines:"LÍNEAS",
@@ -3213,6 +3213,110 @@ function drawScratchAtis(ctx,w,h,colors,lang){
   ctx.restore();
 }
 
+// Boxed forms (ATIS-style cells): a title, then sections of rows. Each row has
+// one or two labelled cells; `weight` makes a cell taller (e.g. Remarks). Used
+// by the LOCAL FLIGHT and PIREP templates.
+const SCRATCH_BOX = {
+  local:{
+    es:{ title:"VUELO LOCAL", sections:[
+      {title:"DATOS INICIALES", rows:[
+        {cells:["Matrícula","Tipo de aeronave"]},
+        {cells:["Pasajeros","Zona a sobrevolar"]},
+        {cells:["Tiempo de vuelo","Autonomía"]},
+      ]},
+      {title:"OPERACIÓN", rows:[
+        {cells:["Pista en uso","Ruta de rodaje"]},
+        {cells:["Viento","QNH"]},
+        {cells:["Transpondedor"]},
+        {cells:["Hora de despegue","Hora de aterrizaje"]},
+        {cells:["Observaciones"], weight:2},
+      ]},
+    ]},
+    en:{ title:"LOCAL FLIGHT", sections:[
+      {title:"FLIGHT DATA", rows:[
+        {cells:["Registration","Aircraft type"]},
+        {cells:["Passengers","Overfly area"]},
+        {cells:["Flight time","Endurance"]},
+      ]},
+      {title:"OPERATION", rows:[
+        {cells:["Runway in use","Taxi route"]},
+        {cells:["Wind","QNH"]},
+        {cells:["Transponder"]},
+        {cells:["Takeoff time","Landing time"]},
+        {cells:["Remarks"], weight:2},
+      ]},
+    ]},
+  },
+  pirep:{
+    es:{ title:"PIREP", sections:[
+      {rows:[
+        {cells:["/OV Ubicación","/TM Hora (Z)"]},
+        {cells:["/FL Altitud","/TP Aeronave"]},
+        {cells:["/SK Cielo","/WX Meteo"]},
+        {cells:["/TA Temp","/WV Viento"]},
+        {cells:["/TB Turbulencia","/IC Engelamiento"]},
+        {cells:["/RM Observaciones"], weight:2},
+      ]},
+    ]},
+    en:{ title:"PIREP", sections:[
+      {rows:[
+        {cells:["/OV Location","/TM Time (Z)"]},
+        {cells:["/FL Altitude","/TP Aircraft"]},
+        {cells:["/SK Sky","/WX Weather"]},
+        {cells:["/TA Temp","/WV Wind"]},
+        {cells:["/TB Turbulence","/IC Icing"]},
+        {cells:["/RM Remarks"], weight:2},
+      ]},
+    ]},
+  },
+};
+
+function drawScratchBoxForm(ctx,w,h,colors,form){
+  const FONT="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+  const m=Math.max(6,w*0.02);
+  const x0=m, x1=w-m, W=x1-x0;
+  const top=m, avail=h-m*2;
+
+  // Flatten into vertical "bands": the title, each section header, each row.
+  const bands=[{type:"title", weight:1.0}];
+  form.sections.forEach(sec=>{
+    if(sec.title) bands.push({type:"hdr", text:sec.title, weight:0.55});
+    sec.rows.forEach(r=>bands.push({type:"row", cells:r.cells, weight:r.weight||1}));
+  });
+  const totW=bands.reduce((a,b)=>a+b.weight,0);
+
+  const titleFs=Math.min(18,Math.max(12,w/30));
+  const labFs=Math.max(10,Math.min(15,w/42));
+  ctx.save();
+  ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+
+  let y=top;
+  bands.forEach(b=>{
+    const bh=avail*b.weight/totW;
+    if(b.type==="title"){
+      ctx.fillStyle=colors.accent; ctx.font=`bold ${titleFs}px ${FONT}`;
+      ctx.fillText(form.title, x0, y+bh*0.55+titleFs*0.35);
+      ctx.strokeStyle=colors.accent; ctx.globalAlpha=0.35; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(x0,y+bh-3); ctx.lineTo(x1,y+bh-3); ctx.stroke(); ctx.globalAlpha=1;
+    } else if(b.type==="hdr"){
+      ctx.fillStyle=colors.accent; ctx.globalAlpha=0.9; ctx.font=`bold ${labFs*0.92}px ${FONT}`;
+      ctx.fillText(b.text, x0, y+bh*0.5+labFs*0.4); ctx.globalAlpha=1;
+    } else {
+      const cells=b.cells, n=cells.length, cw=W/n;
+      ctx.strokeStyle=colors.grid; ctx.lineWidth=1.4;
+      ctx.font=`600 ${labFs}px ${FONT}`;
+      cells.forEach((label,ci)=>{
+        const cx=x0+cw*ci;
+        ctx.strokeRect(cx, y, cw, bh);
+        ctx.fillStyle=colors.text; ctx.globalAlpha=0.72;
+        ctx.fillText(label, cx+labFs*0.7, y+labFs*1.4); ctx.globalAlpha=1;
+      });
+    }
+    y+=bh;
+  });
+  ctx.restore();
+}
+
 // Paint the template background into a 2D context.
 // `colors` = scratchColors() palette; `lang` = "en" | "es".
 function drawScratchTemplate(ctx,w,h,template,colors,lang){
@@ -3237,6 +3341,7 @@ function drawScratchTemplate(ctx,w,h,template,colors,lang){
   }
 
   // Dedicated ForeFlight-style layouts.
+  if(template==="local"||template==="pirep"){ ctx.restore(); drawScratchBoxForm(ctx,w,h,colors,SCRATCH_BOX[template][lang==="es"?"es":"en"]); return; }
   if(template==="atis"){    ctx.restore(); drawScratchAtis(ctx,w,h,colors,lang);    return; }
   if(template==="craft"){   ctx.restore(); drawScratchCraft(ctx,w,h,colors);       return; }
   if(template==="holding"){ ctx.restore(); drawScratchHolding(ctx,w,h,colors,lang); return; }
@@ -3590,7 +3695,7 @@ function ScratchpadScreen({settings,onBack,onSettings}){
   const TEMPLATES=[
     {id:"draw",   label:t.tplDraw,   icon:"✎"},
     {id:"lines",  label:t.tplLines,  icon:"≡"},
-    {id:"grid",   label:t.tplGrid,   icon:"▦"},
+    {id:"local",  label:t.tplLocal,  icon:"✈"},
     {id:"craft",  label:t.tplCraft,  icon:"▣"},
     {id:"atis",   label:t.tplAtis,   icon:"☁"},
     {id:"pirep",  label:t.tplPirep,  icon:"✉"},
