@@ -3583,7 +3583,7 @@ function ScratchpadScreen({settings,onBack,onSettings}){
     setEditing(null);
   };
   const deletePad=(id)=>setPendingDelete(id);   // open styled confirmation (see modal below)
-  const confirmDelete=()=>{ persist(pads.filter(x=>x.id!==pendingDelete)); setPendingDelete(null); };
+  const confirmDelete=()=>{ const left=pads.filter(x=>x.id!==pendingDelete); persist(left); if(!left.length) setEditMode(false); setPendingDelete(null); };
 
   if(editing) return <ScratchpadEditor pad={editing} settings={settings} onSave={savePad}/>;
 
